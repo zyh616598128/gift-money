@@ -173,14 +173,79 @@
       <!-- Tab: List -->
       <div id="tab-list" class="tab-content" style="display:none;">
         <div class="card">
-          <div class="card-title">📁 Excel 导入导出</div>
-          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
-            <a href="/api/export/template" class="btn btn-secondary" target="_blank">📥 下载模板</a>
-            <button class="btn btn-primary" onclick="exportExcel()">📤 导出 Excel</button>
-            <button class="btn btn-secondary" onclick="document.getElementById('excel-file-input').click()">📥 导入 Excel</button>
-            <input type="file" id="excel-file-input" accept=".xlsx,.xls" style="display:none;" onchange="previewExcel(this)">
-            <span id="excel-file-name" style="color:var(--text-muted);font-size:0.9rem;"></span>
+          <div class="card-title">📁 数据导入导出</div>
+
+          <!-- 导入方式切换 -->
+          <div class="import-tabs" style="display:flex;gap:8px;margin-bottom:16px;">
+            <button class="import-tab active" onclick="switchImportMode('excel')" id="tab-excel">
+              📊 Excel导入
+            </button>
+            <button class="import-tab" onclick="switchImportMode('photo')" id="tab-photo">
+              📷 拍照导入
+            </button>
           </div>
+
+          <!-- Excel导入区域 -->
+          <div id="import-excel-area">
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+              <a href="/api/export/template" class="btn btn-secondary" target="_blank">📥 下载模板</a>
+              <button class="btn btn-primary" onclick="exportExcel()">📤 导出 Excel</button>
+              <button class="btn btn-secondary" onclick="document.getElementById('excel-file-input').click()">📥 导入 Excel</button>
+              <input type="file" id="excel-file-input" accept=".xlsx,.xls" style="display:none;" onchange="previewExcel(this)">
+              <span id="excel-file-name" style="color:var(--text-muted);font-size:0.9rem;"></span>
+            </div>
+          </div>
+
+          <!-- 拍照导入区域 -->
+          <div id="import-photo-area" style="display:none;">
+            <div class="photo-upload-area" style="border:2px dashed var(--border);border-radius:12px;padding:24px;text-align:center;background:var(--bg-secondary);">
+              <div id="photo-preview-grid" style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center;margin-bottom:16px;"></div>
+              <div style="color:var(--text-secondary);margin-bottom:16px;">
+                <p style="font-size:1rem;">📷 拍摄或上传礼簿照片</p>
+                <p style="font-size:0.85rem;color:var(--text-muted);">支持多张照片，AI将自动识别记录</p>
+              </div>
+              <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+                <button class="btn btn-primary" onclick="openCamera()">
+                  📸 打开相机
+                </button>
+                <button class="btn btn-secondary" onclick="document.getElementById('photo-file-input').click()">
+                  🖼️ 从相册选择
+                </button>
+                <input type="file" id="photo-file-input" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect(this)">
+              </div>
+              <!-- 相机预览 -->
+              <video id="camera-preview" style="display:none;width:100%;max-width:480px;border-radius:8px;margin-top:16px;" autoplay playsinline></video>
+              <canvas id="camera-canvas" style="display:none;"></canvas>
+              <div id="camera-controls" style="display:none;gap:12px;justify-content:center;margin-top:12px;">
+                <button class="btn btn-primary" onclick="capturePhoto()">📸 拍照</button>
+                <button class="btn btn-ghost" onclick="closeCamera()">❌ 关闭</button>
+              </div>
+            </div>
+
+            <!-- 描述信息输入 -->
+            <div class="form-grid" style="margin-top:16px;max-width:600px;">
+              <div class="form-group">
+                <label>日期（可选，AI会自动识别）</label>
+                <input id="photo-date" type="date" placeholder="不填则由AI识别">
+              </div>
+              <div class="form-group">
+                <label>分类（可选）</label>
+                <select id="photo-category">
+                  <option value="">AI自动判断</option>
+                </select>
+              </div>
+              <div class="form-group" style="grid-column:1/-1;">
+                <label>备注（可选）</label>
+                <input id="photo-note" placeholder="如：何金梅结婚">
+              </div>
+            </div>
+
+            <button class="btn btn-primary" style="margin-top:12px;" onclick="submitPhotoRecognition()" id="btn-photo-submit">
+              🤖 开始识别
+            </button>
+          </div>
+
+          <!-- 预览区域（共用） -->
           <div id="excel-preview-area" style="display:none;margin-top:16px;">
             <div style="margin-bottom:12px;color:var(--text-secondary);">
               预览: <span id="excel-preview-count"></span>
@@ -403,8 +468,8 @@
     </div>
   </div>
 
-  <script src="/static/js/config.js"></script>
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/config.js?v=3"></script>
+  <script src="/static/js/app.js?v=3"></script>
   <!-- Drawer: Add Person -->
   <div class="drawer-overlay" id="add-person-drawer" onclick="closeDrawer('add-person-drawer')">
     <div class="drawer" onclick="event.stopPropagation()">

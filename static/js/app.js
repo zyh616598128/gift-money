@@ -106,7 +106,12 @@ async function api(url, opts = {}) {
   if (token) headers['Authorization'] = 'Bearer ' + token;
   try {
     const res = await fetch(url, { ...opts, headers, body: opts.body });
-    if (res.status === 401) { showToast('登录已过期，请重新登录', 'error'); logout(); return null; }
+    // 登录接口返回401表示账密错误，不触发logout
+    if (res.status === 401 && !url.includes('/auth/login')) {
+      showToast('登录已过期，请重新登录', 'error');
+      logout();
+      return null;
+    }
     return res;
   } catch (e) {
     console.error('API请求失败:', url, e);
@@ -871,17 +876,26 @@ function renderExcelPreview(data) {
   const tbody = document.getElementById('excel-preview-body');
   tbody.innerHTML = '';
 
-  // 排序：需要确认的记录置顶
+  // 排序：需要确认的记录置顶，自动匹配的其次，新人员最后
   const sortedData = [...data].sort((a, b) => {
-    // 需要确认的排在前面
+    // 需要确认的排在最前面
     if (a.needs_confirm && !b.needs_confirm) return -1;
     if (!a.needs_confirm && b.needs_confirm) return 1;
+    // 自动匹配的排在第二
+    if (a.auto_fixed && !b.auto_fixed) return -1;
+    if (!a.auto_fixed && b.auto_fixed) return 1;
     // 其他按原顺序
     return 0;
   });
 
   sortedData.forEach((item, idx) => {
+    // 根据状态设置行背景色
     const tr = el('tr');
+    if (item.needs_confirm) {
+      tr.style.background = '#fffbeb';  // 需要确认 - 浅橙色背景
+    } else if (item.auto_fixed) {
+      tr.style.background = '#f0fdf4';  // 自动匹配 - 浅绿色背景
+    }
 
     // Checkbox
     const cb = el('input', { type: 'checkbox', checked: true, className: 'excel-row-check' });
@@ -893,13 +907,19 @@ function renderExcelPreview(data) {
 
     // Name - 根据状态显示不同颜色
     const nameTd = el('td');
-    let nameColor = 'var(--income)';  // 默认绿色
+    let nameColor = '#22c55e';  // 默认绿色（新人员）
+    let statusIcon = '';
     if (item.needs_confirm) {
       nameColor = '#f59e0b';  // 需要确认 - 橙色高亮
+      statusIcon = '⚠️ ';
+    } else if (item.auto_fixed) {
+      nameColor = '#22c55e';  // 自动匹配 - 绿色
+      statusIcon = '✓ ';
     } else if (item.selected_person_id) {
-      nameColor = 'var(--primary)';  // 已关联 - 蓝色
+      nameColor = '#6366f1';  // 已关联 - 蓝色
+      statusIcon = '✓ ';
     }
-    nameTd.appendChild(el('span', { style: { fontWeight: '600', color: nameColor } }, item.name));
+    nameTd.appendChild(el('span', { style: { fontWeight: '600', color: nameColor } }, statusIcon + item.name));
     tr.appendChild(nameTd);
 
     // Amount
@@ -922,7 +942,11 @@ function renderExcelPreview(data) {
     if (item.selected_person_id && !item.needs_confirm) {
       // 显示已关联状态
       const linkedDiv = el('div', { style: { padding: '8px', background: 'var(--bg-secondary)', borderRadius: '4px' } });
-      linkedDiv.innerHTML = `<span style="color:var(--primary);font-weight:600;">✓ 已关联</span>`;
+      if (item.auto_fixed) {
+        linkedDiv.innerHTML = `<span style="color:#22c55e;font-weight:600;">✓ 自动匹配</span>`;
+      } else {
+        linkedDiv.innerHTML = `<span style="color:var(--primary);font-weight:600;">✓ 已关联</span>`;
+      }
       tdPerson.appendChild(linkedDiv);
     }
     else if (item.needs_confirm && item.same_name_people && item.same_name_people.length > 0) {
@@ -1337,4 +1361,250 @@ async function deletePerson(id) {
     const err = await res.json().catch(() => ({}));
     showToast(err.detail || '删除失败', 'error');
   }
+}
+
+/* ─────────────────────────────────────────────────────────
+   📷 拍照识别导入功能
+   ───────────────────────────────────────────────────────── */
+
+// 照片数据存储
+let _selectedPhotos = [];  // Base64图片数组
+let _cameraStream = null;  // 相机流
+
+// 切换导入模式
+function switchImportMode(mode) {
+  document.querySelectorAll('.import-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + mode).classList.add('active');
+
+  document.getElementById('import-excel-area').style.display = mode === 'excel' ? 'block' : 'none';
+  document.getElementById('import-photo-area').style.display = mode === 'photo' ? 'block' : 'none';
+
+  // 隐藏预览区
+  document.getElementById('excel-preview-area').style.display = 'none';
+
+  // 切换模式时关闭相机
+  if (mode === 'excel' && _cameraStream) {
+    closeCamera();
+  }
+
+  // 初始化分类下拉框
+  if (mode === 'photo') {
+    initPhotoCategorySelect();
+  }
+}
+
+// 初始化照片分类下拉框
+function initPhotoCategorySelect() {
+  const select = document.getElementById('photo-category');
+  if (select && select.options.length <= 1) {
+    api(API + '/api/categories').then(res => {
+      if (!res) return;
+      return res.json();
+    }).then(cats => {
+      if (!cats) return;
+      select.innerHTML = '<option value="">AI自动判断</option>' +
+        cats.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
+    });
+  }
+}
+
+// 打开相机
+async function openCamera() {
+  try {
+    const constraints = {
+      video: {
+        facingMode: 'environment',  // 后置摄像头
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      }
+    };
+
+    _cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+    const video = document.getElementById('camera-preview');
+    video.srcObject = _cameraStream;
+    video.style.display = 'block';
+    document.getElementById('camera-controls').style.display = 'flex';
+
+    showToast('相机已打开，请对准礼簿拍照');
+  } catch (err) {
+    console.error('打开相机失败:', err);
+    showToast('无法访问相机，请检查权限或使用相册选择', 'error');
+  }
+}
+
+// 关闭相机
+function closeCamera() {
+  if (_cameraStream) {
+    _cameraStream.getTracks().forEach(track => track.stop());
+    _cameraStream = null;
+  }
+  document.getElementById('camera-preview').style.display = 'none';
+  document.getElementById('camera-controls').style.display = 'none';
+}
+
+// 拍照
+function capturePhoto() {
+  const video = document.getElementById('camera-preview');
+  const canvas = document.getElementById('camera-canvas');
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0);
+
+  // 压缩并转为base64
+  const quality = 0.8;
+  const base64 = canvas.toDataURL('image/jpeg', quality);
+
+  addPhoto(base64);
+  showToast('已拍摄照片，可继续拍摄或点击识别');
+}
+
+// 处理文件选择
+function handlePhotoSelect(input) {
+  const files = input.files;
+  if (!files || files.length === 0) return;
+
+  Array.from(files).forEach(file => {
+    if (!file.type.startsWith('image/')) {
+      showToast(`${file.name} 不是有效图片`, 'error');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      // 压缩图片
+      compressImage(e.target.result, (compressed) => {
+        addPhoto(compressed);
+      });
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // 清空input，允许重复选择同一文件
+  input.value = '';
+}
+
+// 压缩图片
+function compressImage(dataUrl, callback, maxWidth = 1920, quality = 0.8) {
+  const img = new Image();
+  img.onload = () => {
+    let width = img.width;
+    let height = img.height;
+
+    if (width > maxWidth) {
+      height = (height * maxWidth) / width;
+      width = maxWidth;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, width, height);
+
+    callback(canvas.toDataURL('image/jpeg', quality));
+  };
+  img.src = dataUrl;
+}
+
+// 添加照片到列表
+function addPhoto(base64) {
+  _selectedPhotos.push(base64);
+  updatePhotoPreviewGrid();
+}
+
+// 更新照片预览网格
+function updatePhotoPreviewGrid() {
+  const grid = document.getElementById('photo-preview-grid');
+  grid.innerHTML = _selectedPhotos.map((photo, idx) => `
+    <div class="photo-preview-item" style="position:relative;width:100px;height:100px;">
+      <img src="${photo}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">
+      <button onclick="removePhoto(${idx})" style="position:absolute;top:-8px;right:-8px;width:24px;height:24px;border-radius:50%;background:var(--expense);color:white;border:none;cursor:pointer;font-size:14px;">×</button>
+      <div style="position:absolute;bottom:4px;left:4px;background:rgba(0,0,0,0.6);color:white;font-size:12px;padding:2px 6px;border-radius:4px;">${idx + 1}</div>
+    </div>
+  `).join('');
+}
+
+// 删除照片
+function removePhoto(idx) {
+  _selectedPhotos.splice(idx, 1);
+  updatePhotoPreviewGrid();
+}
+
+// 提交照片识别
+async function submitPhotoRecognition() {
+  if (_selectedPhotos.length === 0) {
+    showToast('请先选择或拍摄照片', 'error');
+    return;
+  }
+
+  // 获取用户输入
+  const date = document.getElementById('photo-date').value || null;
+  const category = document.getElementById('photo-category').value || null;
+  const note = document.getElementById('photo-note').value.trim() || null;
+
+  // 提取base64数据（去掉前缀）
+  const images = _selectedPhotos.map(photo => {
+    return photo.split(',')[1];
+  });
+
+  // 显示加载状态
+  const btn = document.getElementById('btn-photo-submit');
+  const originalText = btn.textContent;
+  btn.textContent = '🤖 AI识别中...';
+  btn.disabled = true;
+
+  showImportLoading('正在识别照片，请稍候...');
+
+  try {
+    const res = await api(API + '/api/import/photo-preview', {
+      method: 'POST',
+      body: JSON.stringify({ images, date, category, note })
+    });
+
+    hideImportLoading();
+
+    if (!res) {
+      btn.textContent = originalText;
+      btn.disabled = false;
+      return;
+    }
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      showToast(err.detail || '识别失败', 'error');
+      btn.textContent = originalText;
+      btn.disabled = false;
+      return;
+    }
+
+    const data = await res.json();
+
+    // 复用Excel预览逻辑
+    pendingExcelData = data.data;
+    let countText = `共 ${data.total} 条 | 自动匹配 ${data.auto_fixed || 0} 条 | 需确认 ${data.needs_confirm} 条 | 新人 ${data.new_persons} 条`;
+    document.getElementById('excel-preview-count').textContent = countText;
+    document.getElementById('excel-preview-area').style.display = 'block';
+    renderExcelPreview(pendingExcelData);
+
+    showToast('识别成功！请核对后确认导入');
+
+    // 清空照片
+    _selectedPhotos = [];
+    updatePhotoPreviewGrid();
+    document.getElementById('photo-date').value = '';
+    document.getElementById('photo-category').value = '';
+    document.getElementById('photo-note').value = '';
+
+  } catch (err) {
+    hideImportLoading();
+    console.error('识别错误:', err);
+    showToast('识别失败: ' + err.message, 'error');
+  }
+
+  btn.textContent = originalText;
+  btn.disabled = false;
 }

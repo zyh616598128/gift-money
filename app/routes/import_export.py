@@ -1,5 +1,5 @@
 """Excel import/export routes."""
-from fastapi import APIRouter, UploadFile, File, Query, Depends, HTTPException, Request
+from fastapi import APIRouter, UploadFile, File, Query, Depends, HTTPException, Request, Form
 from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import List, Optional
@@ -8,6 +8,10 @@ from urllib.parse import quote
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
 import io
+import os
+import json
+import httpx
+import base64
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from app.database import get_connection
 from app.constants import CATEGORIES
@@ -17,6 +21,13 @@ router = APIRouter(prefix="/api", tags=["import-export"])
 
 # 线程池用于并行处理数据
 _executor = ThreadPoolExecutor(max_workers=4)
+
+# DeepSeek API 配置（从环境变量读取）
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+
+if not DEEPSEEK_API_KEY:
+    print("WARNING: DEEPSEEK_API_KEY environment variable not set. Photo recognition will not work.")
 
 
 @router.get("/categories/list")
@@ -643,3 +654,240 @@ def _resolve_or_create_person(conn, user_id: int, name: str, row: dict) -> Optio
         (user_id, name, address, note)
     )
     return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
+# ==================== 照片识别导入 ====================
+
+class PhotoPreviewRequest(BaseModel):
+    """照片识别请求"""
+    images: List[str]  # Base64编码的图片列表
+    date: Optional[str] = None  # 用户提供的日期
+    category: Optional[str] = None  # 用户提供的分类
+    note: Optional[str] = None  # 用户提供的备注
+
+
+@router.post("/import/photo-preview")
+async def preview_photo(request: PhotoPreviewRequest, req: Request):
+    """
+    识别礼簿照片，返回结构化预览数据。
+    复用Excel导入的预览逻辑，返回相同的数据结构。
+    """
+    user = get_current_user(req)
+    user_id = user["user_id"]
+
+    if not request.images:
+        raise HTTPException(status_code=400, detail="请至少上传一张照片")
+
+    # 构建提示词
+    prompt = _build_photo_prompt(request.date, request.category, request.note)
+
+    # 调用DeepSeek Vision API
+    try:
+        recognized_data = await _call_deepseek_vision(request.images, prompt)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI识别失败: {str(e)}")
+
+    if not recognized_data:
+        raise HTTPException(status_code=400, detail="未能识别出有效数据")
+
+    # 复用Excel导入的人员匹配逻辑
+    conn = get_connection()
+    data = []
+    try:
+        for idx, item in enumerate(recognized_data):
+            name = item.get("name", "").strip()
+            if not name:
+                continue
+
+            amount = float(item.get("amount", 0))
+            if amount <= 0:
+                continue
+
+            # 使用用户提供的日期，或AI识别的日期，或今天
+            date = request.date or item.get("date", "") or ""
+            if not date:
+                from datetime import datetime
+                date = datetime.now().strftime("%Y-%m-%d")
+
+            # 分类优先用用户指定的
+            category = request.category or item.get("category", "其他")
+            direction = "income" if "收" in item.get("direction", "收礼") else "expense"
+            address = item.get("address", "").strip()
+            note = request.note or item.get("note", "")
+
+            # 查找同名人员
+            same_name_people = conn.execute("""
+                SELECT p.id, p.name, p.note, p.phone, p.address,
+                       COUNT(t.id) as tx_count,
+                       COALESCE(SUM(CASE WHEN t.direction='income' THEN t.amount ELSE -t.amount END), 0) as balance
+                FROM people p
+                LEFT JOIN transactions t ON t.person_id = p.id AND t.user_id = ?
+                WHERE p.user_id = ? AND p.name = ?
+                GROUP BY p.id
+            """, (user_id, user_id, name)).fetchall()
+
+            # 自动匹配逻辑：精确匹配或单名匹配
+            selected_person_id = None
+            auto_fixed = False
+
+            if same_name_people:
+                # 尝试精确匹配 name + address
+                exact_matches = [p for p in same_name_people if p["address"] == address]
+
+                if len(exact_matches) == 1:
+                    selected_person_id = exact_matches[0]["id"]
+                    auto_fixed = True
+                elif len(same_name_people) == 1:
+                    # 只有一个同名的人，默认关联
+                    selected_person_id = same_name_people[0]["id"]
+                    auto_fixed = True
+
+            result_item = {
+                "row_idx": idx + 1,
+                "date": date[:10],
+                "original_name": name,
+                "name": name,
+                "amount": amount,
+                "category": category,
+                "direction": direction,
+                "address": address,
+                "note": note,
+                "auto_fixed": auto_fixed,
+                "same_name_people": [dict(p) for p in same_name_people],
+                "needs_confirm": len(same_name_people) > 1,
+                "selected_person_id": selected_person_id,
+                "new_person_address": "",
+            }
+            data.append(result_item)
+
+        total = len(data)
+        new_persons = sum(1 for d in data if not d["needs_confirm"] and not d["selected_person_id"])
+        needs_confirm_count = sum(1 for d in data if d["needs_confirm"])
+        auto_fixed_count = sum(1 for d in data if d["auto_fixed"])
+
+        return {
+            "data": data,
+            "total": total,
+            "auto_fixed": auto_fixed_count,
+            "new_persons": new_persons,
+            "needs_confirm": needs_confirm_count,
+        }
+    finally:
+        conn.close()
+
+
+def _build_photo_prompt(date: str = None, category: str = None, note: str = None) -> str:
+    """构建识别提示词"""
+
+    user_hints = []
+    if date:
+        user_hints.append(f"日期统一为: {date}")
+    if category:
+        user_hints.append(f"分类统一为: {category}")
+    if note:
+        user_hints.append(f"备注统一为: {note}")
+
+    hints_text = "\n".join(user_hints) if user_hints else "无额外提示"
+
+    return f"""你是一个礼簿识别助手。请仔细识别照片中的礼簿记录。
+
+用户提供的提示信息:
+{hints_text}
+
+标准格式参考（Excel模板）:
+| 日期 | 姓名 | 金额 | 分类 | 方向 | 地址 | 备注 |
+示例行: 2025-01-15 | 张三 | 200 | 婚嫁 | 收礼 | 北京市朝阳区 | 邻居
+
+识别要求:
+1. 提取每条记录的：姓名、金额
+2. 如果用户未提供日期，尝试识别照片中的日期
+3. 如果用户未提供分类，根据内容判断（婚嫁、葬礼、生日、乔迁、其他）
+4. 方向默认为"收礼"（除非明确标注为送礼）
+5. 如果有地址信息请提取
+
+请返回JSON数组格式，不要包含任何其他文字:
+[
+  {{"name": "张三", "amount": 200, "date": "2025-01-15", "category": "婚嫁", "direction": "收礼", "address": "", "note": ""}},
+  ...
+]
+
+注意:
+- 金额只保留数字，不要带单位
+- 日期格式为 YYYY-MM-DD
+- 如果照片模糊或无法识别某条，尽量猜测或跳过
+- 确保返回的是有效的JSON数组"""
+
+
+async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
+    """调用DeepSeek Vision API识别图片"""
+
+    # 构建消息内容
+    content = [{"type": "text", "text": prompt}]
+
+    # 添加所有图片
+    for img_base64 in images:
+        # 确保是纯base64，不带data:image前缀
+        if "," in img_base64:
+            img_base64 = img_base64.split(",")[1]
+
+        content.append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:image/jpeg;base64,{img_base64}"
+            }
+        })
+
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [
+            {
+                "role": "user",
+                "content": content
+            }
+        ],
+        "max_tokens": 4096,
+        "temperature": 0.1  # 低温度提高一致性
+    }
+
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        response = await client.post(
+            DEEPSEEK_API_URL,
+            json=payload,
+            headers=headers
+        )
+
+        if response.status_code != 200:
+            error_text = response.text
+            raise Exception(f"API调用失败({response.status_code}): {error_text}")
+
+        result = response.json()
+
+    # 解析返回内容
+    try:
+        message_content = result["choices"][0]["message"]["content"]
+
+        # 尝试提取JSON
+        # 去除可能的markdown代码块标记
+        if "```json" in message_content:
+            message_content = message_content.split("```json")[1].split("```")[0]
+        elif "```" in message_content:
+            message_content = message_content.split("```")[1].split("```")[0]
+
+        data = json.loads(message_content.strip())
+
+        if isinstance(data, list):
+            return data
+        elif isinstance(data, dict) and "data" in data:
+            return data["data"]
+        else:
+            return [data]
+
+    except json.JSONDecodeError as e:
+        raise Exception(f"解析AI返回结果失败: {str(e)}")
+    except KeyError as e:
+        raise Exception(f"AI返回格式异常: {str(e)}")
