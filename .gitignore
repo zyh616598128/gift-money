@@ -72,3 +72,4 @@ final_*.py
 inspect_*.py
 read_excel.py
 task.md
+.mcp.json
