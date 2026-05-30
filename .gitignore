@@ -1,0 +1,74 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.eggs/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+
+# Database (keep empty template)
+gift_money.db
+*.db
+
+# Data files
+*.xlsx
+*.xls
+*.csv
+
+# Logs
+*.log
+logs/
+backups/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Coverage
+htmlcov/
+.coverage
+.coverage.*
+*.gcov
+.pytest_cache/
+coverage.xml
+
+# Node
+node_modules/
+
+# Claude
+.claude/
+
+# Test/Temp files
+test_*.py
+*_test.py
+check_*.py
+verify_*.py
+import_*.py
+convert_*.py
+final_*.py
+inspect_*.py
+read_excel.py
+task.md

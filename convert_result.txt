@@ -1,0 +1,16 @@
+转换完成!
+文件路径: D:\workspace\gift-money\结婚礼薄_导入版.xlsx
+数据行数: 745
+
+前10行预览:
+   日期   姓名   金额  分类  方向  地址   备注
+0 NaN  安四毛  100  婚嫁  收礼 NaN  NaN
+1 NaN   敖咪  200  婚嫁  收礼 NaN  NaN
+2 NaN  柏君仪  100  婚嫁  收礼 NaN  NaN
+3 NaN  柏正海  300  婚嫁  收礼 NaN  NaN
+4 NaN  包德贵  200  婚嫁  收礼 NaN  NaN
+5 NaN  包德海  200  婚嫁  收礼 NaN  NaN
+6 NaN  包德华  200  婚嫁  收礼 NaN  NaN
+7 NaN  包德金  100  婚嫁  收礼 NaN  NaN
+8 NaN  包德权  200  婚嫁  收礼 NaN  NaN
+9 NaN  包德银  100  婚嫁  收礼 NaN  NaN

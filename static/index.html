@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>礼金管理系统</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <!-- Login Page -->
+  <div id="login-page" class="login-page">
+    <div class="login-container">
+      <div class="login-header">
+        <div class="login-icon">🧧</div>
+        <h1>礼金管理系统</h1>
+        <p>记录和管理人情往来礼金</p>
+      </div>
+      <div class="login-tabs">
+        <button class="login-tab active" onclick="switchLoginTab('login')">登录</button>
+        <button class="login-tab" onclick="switchLoginTab('register')">注册</button>
+      </div>
+      <form id="login-form" class="login-form">
+        <div class="form-group">
+          <label>用户名</label>
+          <input id="login-username" required placeholder="请输入用户名">
+        </div>
+        <div class="form-group">
+          <label>密码</label>
+          <input id="login-password" type="password" required placeholder="请输入密码">
+        </div>
+        <button type="submit" class="btn btn-primary login-btn">登录</button>
+      </form>
+      <form id="register-form" class="login-form" style="display:none;">
+        <div class="form-group">
+          <label>用户名</label>
+          <input id="reg-username" required placeholder="至少3个字符" minlength="3">
+        </div>
+        <div class="form-group">
+          <label>昵称</label>
+          <input id="reg-display-name" required placeholder="你的昵称">
+        </div>
+        <div class="form-group">
+          <label>密码</label>
+          <input id="reg-password" type="password" required placeholder="至少6个字符" minlength="6">
+        </div>
+        <div class="form-group">
+          <label>确认密码</label>
+          <input id="reg-password2" type="password" required placeholder="再次输入密码">
+        </div>
+        <button type="submit" class="btn btn-primary login-btn">注册</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app" style="display:none;">
+    <header>
+      <div class="container">
+        <h1>🧧 礼金管理系统</h1>
+        <p>记录和管理人情往来礼金</p>
+      </div>
+    </header>
+
+    <div class="container">
+      <!-- Navigation -->
+      <div class="nav-tabs">
+        <button class="nav-tab active" onclick="showTab('summary')">📊 统计</button>
+        <button class="nav-tab" onclick="showTab('add')">➕ 添加</button>
+        <button class="nav-tab" onclick="showTab('list')">📋 记录</button>
+        <button class="nav-tab" onclick="showTab('people')">👥 人员</button>
+        <button class="nav-tab" onclick="showTab('categories')">🏷️ 分类</button>
+      </div>
+
+      <!-- Tab: Summary -->
+      <div id="tab-summary" class="tab-content">
+        <div class="summary-grid">
+          <div class="summary-card income">
+            <div class="label">总收礼</div>
+            <div class="value" id="total-income">¥0.00</div>
+          </div>
+          <div class="summary-card expense">
+            <div class="label">总送礼</div>
+            <div class="value" id="total-expense">¥0.00</div>
+          </div>
+          <div class="summary-card net positive" id="net-card">
+            <div class="label">净余额</div>
+            <div class="value" id="net-balance">¥0.00</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">收礼笔数</div>
+            <div class="value" id="income-count">0</div>
+          </div>
+          <div class="summary-card">
+            <div class="label">送礼笔数</div>
+            <div class="value" id="expense-count">0</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;">
+          <div class="card">
+            <div class="card-title">📈 收礼分类统计</div>
+            <div class="bar-chart" id="cat-income-chart"></div>
+          </div>
+          <div class="card">
+            <div class="card-title">📉 送礼分类统计</div>
+            <div class="bar-chart" id="cat-expense-chart"></div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px;margin-top:16px;">
+          <div class="card">
+            <div class="card-title">📅 近12个月收支</div>
+            <div class="bar-chart" id="monthly-chart"></div>
+          </div>
+          <div class="card">
+            <div class="card-title">👥 人员余额 Top 20</div>
+            <div class="table-wrapper">
+              <table>
+                <thead><tr><th>姓名</th><th>收礼</th><th>送礼</th><th>余额</th><th>笔数</th><th></th></tr></thead>
+                <tbody id="person-stats"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: Add -->
+      <div id="tab-add" class="tab-content" style="display:none;">
+        <div class="card" style="max-width:720px;">
+          <div class="card-title">➕ 新增礼金记录</div>
+          <form id="tx-form" class="form-grid">
+            <div class="form-group" style="position:relative;">
+              <label>人名</label>
+              <input id="tx-name" name="name" required placeholder="输入人名搜索/选择" oninput="searchPersonForTx()" autocomplete="off">
+              <input type="hidden" id="tx-person-id" value="">
+              <div id="person-dropdown" class="custom-dropdown" style="display:none;"></div>
+            </div>
+            <div class="form-group">
+              <label>金额</label>
+              <input name="amount" type="number" step="0.01" min="0.01" required placeholder="0.00">
+            </div>
+            <div class="form-group">
+              <label>分类</label>
+              <div class="select-with-btn">
+                <select name="category" id="form-category" required>
+                  <option value="">请选择</option>
+                </select>
+                <button type="button" class="btn-add-inline" onclick="quickAddCategory('form-category')" title="新建分类">+</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>日期</label>
+              <input name="date" type="date" required>
+            </div>
+            <div class="form-group">
+              <label>方向</label>
+              <select name="direction" required>
+                <option value="income">收礼（我收到）</option>
+                <option value="expense">送礼（我送出）</option>
+              </select>
+            </div>
+            <div class="form-group" style="grid-column:1/-1;">
+              <label>备注</label>
+              <textarea name="note" rows="2" placeholder="可选备注信息"></textarea>
+            </div>
+            <div class="form-group" style="grid-column:1/-1;">
+              <button type="submit" class="btn btn-primary" style="width:100%;">✅ 添加记录</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Tab: List -->
+      <div id="tab-list" class="tab-content" style="display:none;">
+        <div class="card">
+          <div class="card-title">📁 Excel 导入导出</div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+            <a href="/api/export/template" class="btn btn-secondary" target="_blank">📥 下载模板</a>
+            <button class="btn btn-primary" onclick="exportExcel()">📤 导出 Excel</button>
+            <button class="btn btn-secondary" onclick="document.getElementById('excel-file-input').click()">📥 导入 Excel</button>
+            <input type="file" id="excel-file-input" accept=".xlsx,.xls" style="display:none;" onchange="previewExcel(this)">
+            <span id="excel-file-name" style="color:var(--text-muted);font-size:0.9rem;"></span>
+          </div>
+          <div id="excel-preview-area" style="display:none;margin-top:16px;">
+            <div style="margin-bottom:12px;color:var(--text-secondary);">
+              预览: <span id="excel-preview-count"></span>
+            </div>
+            <div class="table-wrapper" style="max-height:400px;overflow-y:auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>是否导入</th>
+                    <th>日期</th>
+                    <th>姓名</th>
+                    <th>金额</th>
+                    <th>分类</th>
+                    <th>方向</th>
+                    <th>备注</th>
+                    <th>人员关联</th>
+                  </tr>
+                </thead>
+                <tbody id="excel-preview-body"></tbody>
+              </table>
+            </div>
+            <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+              <button class="btn btn-primary" onclick="confirmImport()">✅ 确认导入</button>
+              <button class="btn btn-secondary" onclick="cancelImport()">❌ 取消</button>
+              <label style="color:var(--text-secondary);font-size:0.9rem;">
+                <input type="checkbox" id="excel-select-all" onchange="toggleExcelSelectAll()"> 全选/取消全选
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">🔍 筛选</div>
+          <div class="filter-bar">
+            <div class="form-group">
+              <label>人名</label>
+              <input id="filter-name" placeholder="搜索人名">
+            </div>
+            <div class="form-group">
+              <label>分类</label>
+              <select id="filter-category">
+                <option value="">全部</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>开始日期</label>
+              <input id="filter-date-start" type="date">
+            </div>
+            <div class="form-group">
+              <label>结束日期</label>
+              <input id="filter-date-end" type="date">
+            </div>
+            <div class="form-group">
+              <label>方向</label>
+              <select id="filter-direction">
+                <option value="">全部</option>
+                <option value="income">收礼</option>
+                <option value="expense">送礼</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:0;">
+              <button class="btn btn-primary" onclick="loadTransactions(1)">🔍 查询</button>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th class="sortable" onclick="toggleSort('date')">日期 <span id="sort-date-icon" class="sort-icon">↓</span></th>
+                  <th>人名</th><th>地址</th><th>分类</th>
+                  <th>金额</th><th>方向</th><th>备注</th><th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="tx-table-body"></tbody>
+            </table>
+          </div>
+          <div id="pagination" class="pagination"></div>
+        </div>
+      </div>
+
+      <!-- Tab: People (人员管理) -->
+      <div id="tab-people" class="tab-content" style="display:none;">
+        <div class="card">
+          <div class="card-title">🔍 搜索人员</div>
+          <div class="filter-bar" style="margin-bottom:0;">
+            <div class="form-group">
+              <input id="person-search" placeholder="输入姓名搜索">
+            </div>
+            <div class="form-group" style="flex:0;">
+              <button class="btn btn-primary" onclick="searchPeople()">🔍 查询</button>
+            </div>
+          </div>
+        </div>
+        <div id="person-list-container" style="margin-top:16px;">
+          <div class="card">
+            <div class="card-title">📋 人员列表</div>
+            <div class="table-wrapper">
+              <table>
+                <thead><tr><th>姓名</th><th>电话</th><th>地址</th><th>备注</th><th>收礼</th><th>送礼</th><th>余额</th><th>笔数</th><th>操作</th></tr></thead>
+                <tbody id="person-list-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: Categories -->
+      <div id="tab-categories" class="tab-content" style="display:none;">
+        <div class="card" style="max-width:560px;">
+          <div class="card-title">🏷️ 新增分类</div>
+          <form id="cat-form" class="form-grid">
+            <div class="form-group">
+              <label>分类名称</label>
+              <input id="cat-name" required placeholder="例如：婚嫁、丧葬">
+            </div>
+            <div class="form-group" style="grid-column:1/-1;">
+              <button type="submit" class="btn btn-primary" style="width:100%;">✅ 创建</button>
+            </div>
+          </form>
+        </div>
+        <div class="card" style="max-width:560px;">
+          <div class="card-title">📋 现有分类</div>
+          <div id="category-list" class="category-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Person Detail Modal -->
+  <div class="modal-overlay" id="person-modal">
+    <div class="modal" style="max-width:640px;">
+      <div class="modal-title" id="person-modal-title">👤 人员详情</div>
+      <div id="person-modal-body"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="document.getElementById('person-modal').classList.remove('show')">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Modal -->
+  <div class="modal-overlay" id="edit-modal">
+    <div class="modal">
+      <div class="modal-title">✏️ 编辑记录</div>
+      <input type="hidden" id="edit-id">
+      <input type="hidden" id="edit-person-id" value="">
+      <div class="form-grid" style="margin-bottom:12px;">
+        <div class="form-group" style="position:relative;">
+          <label>人名</label>
+          <input id="edit-name" placeholder="输入人名（支持搜索已有人员）" oninput="searchPersonForEdit()">
+          <div id="edit-person-dropdown" class="custom-dropdown" style="display:none;"></div>
+        </div>
+        <div class="form-group">
+          <label>金额</label>
+          <input id="edit-amount" type="number" step="0.01">
+        </div>
+        <div class="form-group">
+          <label>分类</label>
+          <div class="select-with-btn">
+            <select id="edit-category"></select>
+            <button type="button" class="btn-add-inline" onclick="quickAddCategory('edit-category')" title="新建分类">+</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>日期</label>
+          <input id="edit-date" type="date">
+        </div>
+        <div class="form-group">
+          <label>方向</label>
+          <select id="edit-direction">
+            <option value="income">收礼</option>
+            <option value="expense">送礼</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label>备注</label>
+        <textarea id="edit-note" rows="2"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="document.getElementById('edit-modal').classList.remove('show')">取消</button>
+        <button class="btn btn-primary" onclick="saveEdit()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- User Menu -->
+  <div id="user-menu" class="user-menu" style="display:none;">
+    <div class="user-info" onclick="toggleUserMenu()">
+      <span id="user-avatar">👤</span>
+      <span id="user-name">用户</span>
+      <span class="arrow">▼</span>
+    </div>
+    <div class="user-dropdown" id="user-dropdown">
+      <div class="dropdown-item" onclick="showChangePassword()">🔑 修改密码</div>
+      <div class="dropdown-item" onclick="logout()">🚪 退出登录</div>
+    </div>
+  </div>
+
+  <!-- Change Password Modal -->
+  <div class="modal-overlay" id="pwd-modal">
+    <div class="modal">
+      <div class="modal-title">🔑 修改密码</div>
+      <div class="form-group">
+        <label>原密码</label>
+        <input id="pwd-old" type="password" placeholder="原密码">
+      </div>
+      <div class="form-group">
+        <label>新密码</label>
+        <input id="pwd-new" type="password" placeholder="新密码（至少6位）">
+      </div>
+      <div class="form-group">
+        <label>确认新密码</label>
+        <input id="pwd-new2" type="password" placeholder="再次输入新密码">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="document.getElementById('pwd-modal').classList.remove('show')">取消</button>
+        <button class="btn btn-primary" onclick="changePassword()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/config.js"></script>
+  <script src="/static/js/app.js"></script>
+  <!-- Drawer: Add Person -->
+  <div class="drawer-overlay" id="add-person-drawer" onclick="closeDrawer('add-person-drawer')">
+    <div class="drawer" onclick="event.stopPropagation()">
+      <div class="drawer-header">
+        <h3>新增人员</h3>
+        <button class="drawer-close" onclick="closeDrawer('add-person-drawer')">✕</button>
+      </div>
+      <div class="drawer-body">
+        <div class="form-group">
+          <label>人名 <span style="color:red">*</span></label>
+          <input id="drawer-person-name" placeholder="请输入人名">
+        </div>
+        <div class="form-group">
+          <label>电话</label>
+          <input id="drawer-person-phone" placeholder="可选">
+        </div>
+        <div class="form-group">
+          <label>地址</label>
+          <input id="drawer-person-address" placeholder="用于区分同名人员">
+        </div>
+        <div class="form-group">
+          <label>备注</label>
+          <textarea id="drawer-person-note" rows="2" placeholder="可选"></textarea>
+        </div>
+      </div>
+      <div class="drawer-footer">
+        <button class="btn btn-ghost" onclick="closeDrawer('add-person-drawer')">取消</button>
+        <button class="btn btn-primary" onclick="submitAddPerson()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Drawer: Add Category -->
+  <div class="drawer-overlay" id="add-category-drawer" onclick="closeDrawer('add-category-drawer')">
+    <div class="drawer" onclick="event.stopPropagation()">
+      <div class="drawer-header">
+        <h3>新增分类</h3>
+        <button class="drawer-close" onclick="closeDrawer('add-category-drawer')">✕</button>
+      </div>
+      <div class="drawer-body">
+        <div class="form-group">
+          <label>分类名称 <span style="color:red">*</span></label>
+          <input id="drawer-category-name" placeholder="例如：婚嫁、生日">
+        </div>
+      </div>
+      <div class="drawer-footer">
+        <button class="btn btn-ghost" onclick="closeDrawer('add-category-drawer')">取消</button>
+        <button class="btn btn-primary" onclick="submitAddCategory()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Person Confirm Modal -->
+  <div class="modal-overlay" id="delete-person-modal">
+    <div class="modal" style="max-width:500px;">
+      <div class="modal-title">🗑️ 删除人员</div>
+      <div id="delete-person-modal-body"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="document.getElementById('delete-person-modal').classList.remove('show')">取消</button>
+        <button id="delete-person-confirm-btn" class="btn btn-danger">确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function showTab(name) {
+      document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
+      document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('tab-' + name).style.display = 'block';
+      event.target.classList.add('active');
+      if (name === 'summary') loadSummary();
+      if (name === 'people') loadPersonList();
+      if (name === 'list') loadCategories();
+    }
+    function toggleUserMenu() {
+      const dd = document.getElementById('user-dropdown');
+      dd.style.display = dd.style.display === 'block' ? 'none' : 'block';
+    }
+    function showChangePassword() {
+      document.getElementById('pwd-modal').classList.add('show');
+    }
+  </script>
+</body>
+</html>
