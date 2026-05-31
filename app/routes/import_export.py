@@ -841,6 +841,16 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
     if "," in img_base64:
         img_base64 = img_base64.split(",")[1]
 
+    # 使用线程池执行同步请求
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(_executor, _sync_call_deepseek, img_base64, prompt)
+    return result
+
+
+def _sync_call_deepseek(img_base64: str, prompt: str) -> List[dict]:
+    """同步调用DeepSeek API（在线程池中执行）"""
+    import requests
+
     # DeepSeek V4 格式：image_data 作为message的独立字段
     payload = {
         "model": "deepseek-v4-pro",  # pro版本支持视觉
@@ -866,20 +876,20 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
         "Content-Type": "application/json"
     }
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        response = await client.post(
-            DEEPSEEK_API_URL,
-            json=payload,
-            headers=headers
-        )
+    response = requests.post(
+        DEEPSEEK_API_URL,
+        json=payload,
+        headers=headers,
+        timeout=120
+    )
 
-        if response.status_code != 200:
-            error_text = response.text
-            print(f"DeepSeek API Error: status={response.status_code}, response={error_text}")
-            raise Exception(f"API调用失败({response.status_code}): {error_text}")
+    if response.status_code != 200:
+        error_text = response.text
+        print(f"DeepSeek API Error: status={response.status_code}, response={error_text}")
+        raise Exception(f"API调用失败({response.status_code}): {error_text}")
 
-        result = response.json()
-        print(f"DeepSeek API Response: {json.dumps(result, ensure_ascii=False)[:2000]}")
+    result = response.json()
+    print(f"DeepSeek API Response: {json.dumps(result, ensure_ascii=False)[:2000]}")
 
     # 解析返回内容
     try:
