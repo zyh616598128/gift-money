@@ -313,6 +313,13 @@
             <button class="btn btn-sm btn-primary" onclick="openBatchEditModal()">✏️ 批量修改</button>
             <button class="btn btn-sm btn-ghost" onclick="clearSelection()">取消选择</button>
           </div>
+          <!-- 移动端全选 -->
+          <div class="mobile-only" style="padding:8px 0;border-bottom:1px solid var(--border);margin-bottom:12px;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="select-all-tx-mobile" onchange="toggleSelectAll(this.checked)">
+              <span>全选当前页</span>
+            </label>
+          </div>
           <div class="table-wrapper desktop-only">
             <table>
               <thead>

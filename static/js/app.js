@@ -397,8 +397,9 @@ async function loadTransactions(page) {
         const amt = Number(r.amount) || 0;
         const address = r.person_address || '';
         const card = el('div', { className: 'mobile-tx-card' },
-          el('div', { className: 'mobile-tx-card-header' },
-            el('div', {},
+          el('div', { style: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' } },
+            el('input', { type: 'checkbox', className: 'tx-checkbox', 'data-id': r.id, onchange: updateBatchCount }),
+            el('div', { style: { flex: 1 } },
               el('div', { style: { fontSize: '12px', color: 'var(--text-muted)' } }, '姓名'),
               el('div', { className: 'mobile-tx-card-name' }, r.name)
             ),
@@ -422,6 +423,7 @@ async function loadTransactions(page) {
         container.appendChild(card);
       });
     }
+    updateBatchCount();
   } else {
     // Web端：表格
     document.getElementById('tx-card-container').style.display = 'none';
@@ -582,16 +584,23 @@ function updateBatchCount() {
 
   // 更新全选框状态
   const allCheckbox = document.getElementById('select-all-tx');
+  const allCheckboxMobile = document.getElementById('select-all-tx-mobile');
   const allCheckboxes = document.querySelectorAll('.tx-checkbox');
   if (allCheckbox && allCheckboxes.length > 0) {
     allCheckbox.checked = selectedIds.size === allCheckboxes.length;
+  }
+  if (allCheckboxMobile && allCheckboxes.length > 0) {
+    allCheckboxMobile.checked = selectedIds.size === allCheckboxes.length;
   }
 }
 
 function clearSelection() {
   selectedIds.clear();
   document.querySelectorAll('.tx-checkbox').forEach(cb => cb.checked = false);
-  document.getElementById('select-all-tx').checked = false;
+  const allCheckbox = document.getElementById('select-all-tx');
+  const allCheckboxMobile = document.getElementById('select-all-tx-mobile');
+  if (allCheckbox) allCheckbox.checked = false;
+  if (allCheckboxMobile) allCheckboxMobile.checked = false;
   document.getElementById('batch-ops').style.display = 'none';
 }
 

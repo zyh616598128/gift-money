@@ -120,7 +120,7 @@ tbody tr:hover { background: var(--primary-light); }
 .page-btn:disabled { opacity: .4; cursor: not-allowed; }
 
 /* ── Batch Operations ── */
-.batch-operations { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--primary-light); border-radius: 8px; margin-bottom: 16px; }
+.batch-operations { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--primary-light); border-radius: 8px; margin-bottom: 16px; flex-wrap: wrap; }
 .batch-operations #batch-count { font-weight: 600; color: var(--primary); }
 
 /* ── Modal ── */
