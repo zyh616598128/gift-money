@@ -829,6 +829,7 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
 
     DeepSeek V4正确格式：
     - image_url: {"url": "data:image/jpeg;base64,<base64>"}
+    - 图片需要压缩到约50KB以下才能正确识别
     """
 
     # DeepSeek V4 只支持单张图片，取第一张
@@ -840,10 +841,55 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
     if "," in img_base64:
         img_base64 = img_base64.split(",")[1]
 
-    # 使用线程池执行同步请求
+    # 压缩图片（在线程池中执行）
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(_executor, _sync_call_deepseek_httpx, img_base64, prompt)
+    compressed_b64 = await loop.run_in_executor(_executor, _compress_image, img_base64)
+    print(f"Image compressed: {len(img_base64)} -> {len(compressed_b64)} chars")
+
+    # 调用API
+    result = await loop.run_in_executor(_executor, _sync_call_deepseek_httpx, compressed_b64, prompt)
     return result
+
+
+def _compress_image(img_base64: str, max_size: int = 800, quality: int = 60, max_file_size: int = 100000) -> str:
+    """压缩图片到指定大小以下"""
+    from PIL import Image
+    import io
+
+    # 解码图片
+    img_bytes = base64.b64decode(img_base64)
+    img = Image.open(io.BytesIO(img_bytes))
+
+    # 转换为RGB（处理PNG等格式）
+    if img.mode in ('RGBA', 'P'):
+        img = img.convert('RGB')
+
+    # 缩小尺寸
+    if img.width > max_size or img.height > max_size:
+        ratio = min(max_size / img.width, max_size / img.height)
+        img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.LANCZOS)
+
+    # 压缩并检查大小
+    for q in [quality, 50, 40, 30, 20]:
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG', quality=q)
+        result_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+        if len(result_b64) <= max_file_size:
+            return result_b64
+
+    # 如果还是太大，继续缩小
+    while len(result_b64) > max_file_size and max_size > 200:
+        max_size = int(max_size * 0.8)
+        img = Image.open(io.BytesIO(img_bytes))
+        if img.mode in ('RGBA', 'P'):
+            img = img.convert('RGB')
+        ratio = min(max_size / img.width, max_size / img.height)
+        img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG', quality=30)
+        result_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
+
+    return result_b64
 
 
 def _sync_call_deepseek_httpx(img_base64: str, prompt: str) -> List[dict]:
