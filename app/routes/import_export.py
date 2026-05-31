@@ -690,11 +690,10 @@ async def upload_photo(file: UploadFile = File(...), request: Request = None):
     with open(filepath, "wb") as f:
         f.write(compressed)
 
-    # 返回可访问的URL（使用请求的host）
-    host = request.headers.get("x-forwarded-host") or request.headers.get("host", "")
-    scheme = request.headers.get("x-forwarded-proto", "https")
-    base_url = f"{scheme}://{host}" if host else ""
-    url = f"{base_url}/static/uploads/{filename}"
+    # 返回可访问的URL（使用请求的host，支持IP访问）
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host", "203.195.195.23")
+    scheme = request.headers.get("x-forwarded-proto", "http")
+    url = f"{scheme}://{host}/static/uploads/{filename}"
 
     print(f"[UPLOAD] 文件已保存: {filename}, URL: {url}")
     return {"url": url, "filename": filename}
