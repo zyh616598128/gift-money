@@ -206,20 +206,10 @@
                 <p style="font-size:0.85rem;color:var(--text-muted);">支持多张照片，AI将自动识别记录</p>
               </div>
               <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-                <button class="btn btn-primary" onclick="openCamera()">
-                  📸 打开相机
-                </button>
-                <button class="btn btn-secondary" onclick="document.getElementById('photo-file-input').click()">
-                  🖼️ 从相册选择
+                <button class="btn btn-primary" onclick="document.getElementById('photo-file-input').click()">
+                  🖼️ 选择照片
                 </button>
                 <input type="file" id="photo-file-input" accept="image/*" multiple style="display:none;" onchange="handlePhotoSelect(this)">
-              </div>
-              <!-- 相机预览 -->
-              <video id="camera-preview" style="display:none;width:100%;max-width:480px;border-radius:8px;margin-top:16px;" autoplay playsinline></video>
-              <canvas id="camera-canvas" style="display:none;"></canvas>
-              <div id="camera-controls" style="display:none;gap:12px;justify-content:center;margin-top:12px;">
-                <button class="btn btn-primary" onclick="capturePhoto()">📸 拍照</button>
-                <button class="btn btn-ghost" onclick="closeCamera()">❌ 关闭</button>
               </div>
             </div>
 
