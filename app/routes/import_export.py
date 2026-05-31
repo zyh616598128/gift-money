@@ -27,6 +27,11 @@ _executor = ThreadPoolExecutor(max_workers=4)
 LOCAL_API_URL = os.environ.get("LOCAL_API_URL", "http://127.0.0.1:1234/v1/chat/completions")
 LOCAL_MODEL = os.environ.get("LOCAL_MODEL", "qwen/qwen3.6-35b-a3b")
 
+# 腾讯云 API 配置（Anthropic 兼容格式）
+TENCENT_API_URL = os.environ.get("TENCENT_API_URL", "")
+TENCENT_API_KEY = os.environ.get("TENCENT_API_KEY", "")
+TENCENT_MODEL = os.environ.get("TENCENT_MODEL", "kimi-k2-0711-preview")
+
 
 @router.get("/categories/list")
 def get_categories_list():
@@ -896,10 +901,9 @@ def _build_photo_prompt(date: str = None, category: str = None, note: str = None
 
 
 async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
-    """调用腾讯云 GLM-5 Vision API识别图片
+    """调用视觉API识别图片
 
-    腾讯云使用Anthropic兼容格式：
-    - content: [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}}]
+    优先使用腾讯云API（Anthropic兼容格式），否则使用本地模型（OpenAI兼容格式）
     """
 
     # 只支持单张图片，取第一张
@@ -916,9 +920,85 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
     compressed_b64 = await loop.run_in_executor(_executor, _compress_image, img_base64)
     print(f"Image compressed: {len(img_base64)} -> {len(compressed_b64)} chars")
 
-    # 调用API
-    result = await loop.run_in_executor(_executor, _sync_call_local_api, compressed_b64, prompt)
+    # 优先使用腾讯云API
+    if TENCENT_API_URL and TENCENT_API_KEY:
+        result = await loop.run_in_executor(_executor, _sync_call_tencent_api, compressed_b64, prompt)
+    else:
+        result = await loop.run_in_executor(_executor, _sync_call_local_api, compressed_b64, prompt)
     return result
+
+
+def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
+    """同步调用腾讯云API（Anthropic兼容格式）"""
+    # Anthropic 格式
+    payload = {
+        "model": TENCENT_MODEL,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}}
+                ]
+            }
+        ],
+        "max_tokens": 4096
+    }
+
+    print(f"Sending to Tencent API: model={TENCENT_MODEL}")
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {TENCENT_API_KEY}"
+    }
+
+    response = httpx.post(
+        TENCENT_API_URL,
+        json=payload,
+        headers=headers,
+        timeout=300.0
+    )
+
+    if response.status_code != 200:
+        error_text = response.text
+        print(f"Tencent API Error: status={response.status_code}, response={error_text}")
+        raise Exception(f"API调用失败({response.status_code}): {error_text}")
+
+    result = response.json()
+    print(f"Tencent API Response: {json.dumps(result, ensure_ascii=False)[:2000]}")
+
+    # 解析返回内容（Anthropic格式）
+    try:
+        content_blocks = result.get("content", [])
+        message_content = ""
+        for block in content_blocks:
+            if block.get("type") == "text":
+                message_content += block.get("text", "")
+
+        print(f"Message content: {message_content[:1000]}")
+
+        if not message_content:
+            raise Exception("AI返回内容为空")
+
+        # 尝试提取JSON
+        if "```json" in message_content:
+            message_content = message_content.split("```json")[1].split("```")[0]
+        elif "```" in message_content:
+            message_content = message_content.split("```")[1].split("```")[0]
+
+        data = json.loads(message_content.strip())
+
+        if isinstance(data, list):
+            return data
+        elif isinstance(data, dict) and "data" in data:
+            return data["data"]
+        else:
+            return [data]
+
+    except json.JSONDecodeError as e:
+        raise Exception(f"解析AI返回结果失败: {str(e)}")
+    except KeyError as e:
+        raise Exception(f"AI返回格式异常: {str(e)}")
 
 
 def _compress_image(img_base64: str, max_size: int = 800, quality: int = 50, max_file_size: int = 50000) -> str:
