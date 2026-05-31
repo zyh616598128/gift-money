@@ -1282,92 +1282,6 @@ function toggleExcelSelectAll() {
   document.querySelectorAll('#excel-preview-body .excel-row-check').forEach(cb => cb.checked = checked);
 }
 
-async function confirmImport() {
-  const checks = document.querySelectorAll('#excel-preview-body .excel-row-check');
-  const data = [];
-
-  checks.forEach(cb => {
-    if (!cb.checked) return;
-    const idx = parseInt(cb.dataset.idx);
-    const item = { ...pendingExcelData[idx] };
-
-    // 从界面获取用户选择
-    const card = document.querySelector(`.person-confirm-card[data-idx="${idx}"]`);
-    if (card) {
-      const selectedRadio = card.querySelector(`input[name="person-select-${idx}"]:checked`);
-      if (selectedRadio) {
-        if (selectedRadio.value === '__new__') {
-          item.selected_person_id = null;
-          const addrInput = card.querySelector('.new-person-address-input');
-          if (addrInput) item.new_person_address = addrInput.value;
-        } else {
-          item.selected_person_id = parseInt(selectedRadio.value);
-          item.new_person_address = '';
-        }
-      } else {
-        // 未选择，跳过
-        showToast(`第${item.row_idx}行未选择人员，已跳过`, 'error');
-        return;
-      }
-    } else {
-      // 新人员或已默认关联，检查是否有已有的 selected_person_id
-      if (!item.selected_person_id) {
-        // 没有默认关联，从输入框获取地址
-        const addrInput = document.querySelector(`.excel-new-person-fields[data-idx="${idx}"] .new-person-address-input`);
-        if (addrInput) item.new_person_address = addrInput.value;
-        // 如果有地址输入，更新 address 字段
-        if (item.new_person_address) {
-          item.address = item.new_person_address;
-        }
-      }
-      // 保持已有的 selected_person_id（后端可能已设置）
-    }
-
-    // 将 new_person_address 设置到 address 字段（后端使用 address）
-    if (item.new_person_address) {
-      item.address = item.new_person_address;
-    }
-
-    data.push(item);
-  });
-
-  if (!data.length) { showToast('请至少选择一条记录', 'error'); return; }
-
-  // 检查是否所有需确认的都已选择
-  const unconfirmed = data.filter(d => d.needs_confirm && !d.selected_person_id && !d.new_person_address);
-  if (unconfirmed.length > 0) {
-    showToast(`有 ${unconfirmed.length} 条记录未选择人员`, 'error');
-    return;
-  }
-
-  // 显示阻塞式加载遮罩
-  showImportLoading('正在导入数据...');
-
-  try {
-    const res = await api(API + '/api/import/excel-confirm', {
-      method: 'POST', body: JSON.stringify({ data }),
-    });
-    if (!res) {
-      hideImportLoading();
-      return;
-    }
-    const result = await res.json();
-    if (res.ok) {
-      hideImportLoading();
-      showToast(result.message || '导入成功');
-      cancelImport();
-      loadTransactions(1);
-      loadSummary();
-      loadPersonList();
-    } else {
-      hideImportLoading();
-      showToast(result.detail || '导入失败', 'error');
-    }
-  } catch (e) {
-    hideImportLoading();
-    showToast('导入出错: ' + e.message, 'error');
-  }
-}
 
 /* ── Change Password ── */
 async function changePassword() {
@@ -1777,6 +1691,11 @@ function removePhoto(idx) {
 }
 
 // 提交照片识别
+let _photoResults = [];  // 每张图片的识别结果
+let _currentPhotoIndex = 0;  // 当前显示的图片索引
+let _totalPhotos = 0;  // 总图片数
+let _recognizingIndex = 0;  // 正在识别的图片索引
+
 async function submitPhotoRecognition() {
   if (_selectedPhotos.length === 0) {
     showToast('请先选择或拍摄照片', 'error');
@@ -1795,20 +1714,24 @@ async function submitPhotoRecognition() {
   btn.textContent = '📤 上传图片中...';
   btn.disabled = true;
 
+  // 初始化状态
+  _photoResults = [];
+  _totalPhotos = _selectedPhotos.length;
+  _currentPhotoIndex = 0;
+  _recognizingIndex = 0;
+
   showImportLoading('正在上传图片...');
 
   try {
     // 第一步：上传所有图片，获取URL
     const uploadedUrls = [];
     for (let i = 0; i < _selectedPhotos.length; i++) {
-      const photo = _selectedPhotos[i];
       showImportLoading(`上传图片 ${i + 1}/${_selectedPhotos.length}...`);
 
-      // 将base64转为blob
+      const photo = _selectedPhotos[i];
       const response = await fetch(photo);
       const blob = await response.blob();
 
-      // 上传图片
       const formData = new FormData();
       formData.append('file', blob, 'photo.jpg');
 
@@ -1826,14 +1749,14 @@ async function submitPhotoRecognition() {
       uploadedUrls.push(uploadData.url);
     }
 
-    // 第二步：用URL调用识别API
-    showImportLoading('正在识别礼簿照片，大约需要50秒，请耐心等待...');
-
     // 初始化预览区
-    pendingExcelData = [];
     document.getElementById('excel-preview-area').style.display = 'block';
-    document.getElementById('excel-preview-body').innerHTML = '';
+    pendingExcelData = [];
 
+    // 显示初始状态
+    updatePhotoRecognitionUI();
+
+    // 第二步：用URL调用识别API（流式）
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = 'Bearer ' + token;
 
@@ -1866,16 +1789,30 @@ async function submitPhotoRecognition() {
             const data = JSON.parse(line.slice(6));
 
             if (data.done) {
+              // 全部识别完成
               hideImportLoading();
-              showToast(`识别完成！共 ${data.total} 条记录`);
-            } else if (data.data && data.data.length > 0) {
-              pendingExcelData.push(...data.data);
+              _recognizingIndex = _totalPhotos;
+              updatePhotoRecognitionUI();
+              showToast(`识别完成！共 ${_totalPhotos} 张图片，${_photoResults.reduce((a, b) => a + b.data.length, 0)} 条记录`);
+            } else if (data.batch !== undefined) {
+              // 单张图片识别完成
+              _recognizingIndex = data.batch;
+              _photoResults[data.batch - 1] = {
+                index: data.batch,
+                total: data.total_batches,
+                data: data.data || [],
+                error: data.error || null,
+                accumulated: data.accumulated || {}
+              };
 
-              const acc = data.accumulated;
-              let countText = `共 ${acc.total} 条 | 自动匹配 ${acc.auto_fixed} 条 | 需确认 ${acc.needs_confirm} 条 | 新人 ${acc.new_persons} 条`;
-              document.getElementById('excel-preview-count').textContent = countText;
+              // 更新UI
+              updatePhotoRecognitionUI();
 
-              renderExcelPreview(pendingExcelData);
+              // 如果是第一张，自动显示
+              if (data.batch === 1) {
+                _currentPhotoIndex = 0;
+                showPhotoResult(0);
+              }
             }
           } catch (e) {
             console.error('解析SSE数据失败:', e);
@@ -1901,4 +1838,198 @@ async function submitPhotoRecognition() {
 
   btn.textContent = originalText;
   btn.disabled = false;
+}
+
+// 更新识别进度UI
+function updatePhotoRecognitionUI() {
+  const container = document.getElementById('excel-preview-count');
+  const recognized = _photoResults.filter(r => r).length;
+
+  if (_recognizingIndex < _totalPhotos) {
+    container.innerHTML = `
+      <span style="color:var(--primary);font-weight:600;">
+        📷 识别进度: ${_recognizingIndex}/${_totalPhotos} 张
+      </span>
+      <span style="margin-left:12px;color:var(--text-secondary);">
+        (识别完一张即可编辑)
+      </span>
+    `;
+  } else {
+    const totalRecords = _photoResults.reduce((a, b) => a + (b?.data?.length || 0), 0);
+    container.innerHTML = `<span style="color:var(--income);font-weight:600;">✓ 识别完成: ${_totalPhotos} 张图片，${totalRecords} 条记录</span>`;
+  }
+
+  // 显示图片切换器
+  renderPhotoSwitcher();
+}
+
+// 渲染图片切换器
+function renderPhotoSwitcher() {
+  let switcher = document.getElementById('photo-switcher');
+  if (!switcher) {
+    switcher = el('div', { id: 'photo-switcher', style: { display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' } });
+    const previewArea = document.getElementById('excel-preview-area');
+    previewArea.insertBefore(switcher, previewArea.querySelector('.table-wrapper') || previewArea.firstChild.nextSibling);
+  }
+
+  switcher.innerHTML = '';
+
+  for (let i = 0; i < _totalPhotos; i++) {
+    const result = _photoResults[i];
+    const isCurrent = i === _currentPhotoIndex;
+    const isRecognized = result && result.data;
+
+    const btn = el('button', {
+      className: `btn ${isCurrent ? 'btn-primary' : 'btn-secondary'}`,
+      style: { padding: '8px 16px', position: 'relative' },
+      onclick: () => showPhotoResult(i)
+    });
+
+    if (isRecognized) {
+      btn.textContent = `📷 ${i + 1} (${result.data.length}条)`;
+      if (result.error) {
+        btn.style.borderColor = 'var(--expense)';
+      }
+    } else if (i < _recognizingIndex) {
+      btn.textContent = `📷 ${i + 1} 识别中...`;
+      btn.disabled = true;
+    } else if (i === _recognizingIndex && _recognizingIndex < _totalPhotos) {
+      btn.textContent = `📷 ${i + 1} 识别中...`;
+      btn.disabled = true;
+    } else {
+      btn.textContent = `📷 ${i + 1} 等待中`;
+      btn.disabled = true;
+    }
+
+    switcher.appendChild(btn);
+  }
+}
+
+// 显示指定图片的识别结果
+function showPhotoResult(index) {
+  _currentPhotoIndex = index;
+  const result = _photoResults[index];
+
+  if (!result) {
+    return;
+  }
+
+  // 更新切换器高亮
+  renderPhotoSwitcher();
+
+  // 渲染当前图片的数据
+  if (result.data && result.data.length > 0) {
+    pendingExcelData = result.data;
+    renderExcelPreview(pendingExcelData);
+  } else if (result.error) {
+    document.getElementById('excel-preview-body').innerHTML = `
+      <tr><td colspan="9" style="text-align:center;color:var(--expense);padding:32px;">
+        ❌ 识别失败: ${result.error}
+      </td></tr>
+    `;
+  } else {
+    document.getElementById('excel-preview-body').innerHTML = `
+      <tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:32px;">
+        该图片未识别出有效记录
+      </td></tr>
+    `;
+  }
+}
+
+// 确认导入当前图片的数据
+async function confirmImport() {
+  const checks = document.querySelectorAll('#excel-preview-body .excel-row-check');
+  const data = [];
+
+  checks.forEach(cb => {
+    if (!cb.checked) return;
+    const idx = parseInt(cb.dataset.idx);
+    const item = { ...pendingExcelData[idx] };
+
+    // 从界面获取用户选择
+    const card = document.querySelector(`.person-confirm-card[data-idx="${idx}"]`);
+    if (card) {
+      const selectedRadio = card.querySelector(`input[name="person-select-${idx}"]:checked`);
+      if (selectedRadio) {
+        if (selectedRadio.value === '__new__') {
+          item.selected_person_id = null;
+          const addrInput = card.querySelector('.new-person-address-input');
+          if (addrInput) item.new_person_address = addrInput.value;
+        } else {
+          item.selected_person_id = parseInt(selectedRadio.value);
+          item.new_person_address = '';
+        }
+      } else {
+        showToast(`第${item.row_idx}行未选择人员，已跳过`, 'error');
+        return;
+      }
+    } else {
+      if (!item.selected_person_id) {
+        const addrInput = document.querySelector(`.excel-new-person-fields[data-idx="${idx}"] .new-person-address-input`);
+        if (addrInput) item.new_person_address = addrInput.value;
+        if (item.new_person_address) {
+          item.address = item.new_person_address;
+        }
+      }
+    }
+
+    if (item.new_person_address) {
+      item.address = item.new_person_address;
+    }
+
+    data.push(item);
+  });
+
+  if (!data.length) { showToast('请至少选择一条记录', 'error'); return; }
+
+  const unconfirmed = data.filter(d => d.needs_confirm && !d.selected_person_id && !d.new_person_address);
+  if (unconfirmed.length > 0) {
+    showToast(`有 ${unconfirmed.length} 条记录未选择人员`, 'error');
+    return;
+  }
+
+  showImportLoading('正在导入数据...');
+
+  try {
+    const res = await api(API + '/api/import/excel-confirm', {
+      method: 'POST', body: JSON.stringify({ data }),
+    });
+    if (!res) {
+      hideImportLoading();
+      return;
+    }
+    const result = await res.json();
+    if (res.ok) {
+      hideImportLoading();
+      showToast(result.message || '导入成功');
+
+      // 清除已导入的图片数据
+      _photoResults[_currentPhotoIndex] = { ..._photoResults[_currentPhotoIndex], data: [], imported: true };
+
+      // 跳到下一张未导入的图片
+      let nextIndex = -1;
+      for (let i = 0; i < _photoResults.length; i++) {
+        if (_photoResults[i] && _photoResults[i].data && _photoResults[i].data.length > 0 && !_photoResults[i].imported) {
+          nextIndex = i;
+          break;
+        }
+      }
+
+      if (nextIndex >= 0) {
+        showPhotoResult(nextIndex);
+      } else {
+        // 全部导入完成
+        document.getElementById('excel-preview-area').style.display = 'none';
+        loadTransactions(1);
+        loadSummary();
+        loadPersonList();
+      }
+    } else {
+      hideImportLoading();
+      showToast(result.detail || '导入失败', 'error');
+    }
+  } catch (e) {
+    hideImportLoading();
+    showToast('导入出错: ' + e.message, 'error');
+  }
 }
