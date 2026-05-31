@@ -214,6 +214,38 @@ async function loadSummary() {
          <td>${r.cnt}</td>
          <td><button class="btn btn-sm btn-primary" onclick="viewPersonDetail(${r.id})">查看</button></td></tr>`;
   }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:32px;">暂无数据</td></tr>';
+
+  // Mobile person stats cards
+  if (isMobile) {
+    const cardContainer = document.getElementById('person-stats-card-container');
+    if (cardContainer) {
+      cardContainer.innerHTML = (d.person_stats || []).map(r => {
+        const total_income = Number(r.total_income) || 0;
+        const total_expense = Number(r.total_expense) || 0;
+        const balance = Number(r.balance) || 0;
+        return `<div class="mobile-tx-card">
+          <div class="mobile-tx-card-header">
+            <div>
+              <div style="font-size:12px;color:var(--text-muted);">姓名</div>
+              <div class="mobile-tx-card-name">${r.name}</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:12px;color:var(--text-muted);">余额</div>
+              <div class="mobile-tx-card-amount ${balance>=0?'amount-income':'amount-expense'}">${fmt(balance)}</div>
+            </div>
+          </div>
+          <div class="mobile-tx-card-meta">
+            <span>📥 收礼: ${fmt(total_income)}</span>
+            <span>📤 送礼: ${fmt(total_expense)}</span>
+            <span>📊 笔数: ${r.cnt}</span>
+          </div>
+          <div class="mobile-tx-card-actions">
+            <button class="btn btn-primary" onclick="viewPersonDetail(${r.id})">查看</button>
+          </div>
+        </div>`;
+      }).join('') || '<div class="empty-state"><div class="icon">👥</div><p>暂无数据</p></div>';
+    }
+  }
 }
 
 function renderBarChart(id, data, type) {
@@ -318,6 +350,7 @@ async function loadTransactions(page) {
     } else {
       (data.data || []).forEach(r => {
         const amt = Number(r.amount) || 0;
+        const address = r.person_address || '';
         const card = el('div', { className: 'mobile-tx-card' },
           el('div', { className: 'mobile-tx-card-header' },
             el('div', {},
@@ -333,7 +366,8 @@ async function loadTransactions(page) {
           el('div', { className: 'mobile-tx-card-meta' },
             el('span', {}, `📅 日期: ${r.date}`),
             el('span', {}, `🏷️ 分类: ${r.category}`),
-            el('span', {}, r.direction==='income'?'📥 收礼':'📤 送礼')
+            el('span', {}, r.direction==='income'?'📥 收礼':'📤 送礼'),
+            address ? el('span', {}, `📍 地址: ${address}`) : null
           ),
           el('div', { className: 'mobile-tx-card-actions' },
             el('button', { className: 'btn btn-secondary', onclick: () => editTransaction(r.id) }, '编辑'),
@@ -670,26 +704,72 @@ async function loadPersonList(name) {
   const res = await api(url);
   if (!res) return;
   const people = await res.json();
-  document.getElementById('person-list-body').innerHTML = people.length
-    ? people.map(p => {
+
+  if (isMobile) {
+    // 移动端：卡片列表
+    const container = document.getElementById('person-card-container');
+    container.style.display = 'block';
+    container.innerHTML = '';
+
+    if (people.length === 0) {
+      container.innerHTML = '<div class="empty-state"><div class="icon">👥</div><p>暂无人员</p></div>';
+    } else {
+      people.forEach(p => {
         const tInc = Number(p.total_income) || 0;
         const tExp = Number(p.total_expense) || 0;
         const bal = Number(p.balance) || 0;
-        return `<tr><td><strong>${p.name}</strong></td>
-         <td style="color:var(--text-secondary);font-size:0.85rem;">${p.phone||'-'}</td>
-         <td style="color:var(--text-secondary);font-size:0.85rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(p.address||'').replace(/"/g,'&quot;')}">${p.address||'-'}</td>
-         <td style="color:var(--text-secondary);font-size:0.85rem;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(p.note||'').replace(/"/g,'&quot;')}">${p.note||'-'}</td>
-         <td class="amount-income">${fmt(tInc)}</td>
-         <td class="amount-expense">${fmt(tExp)}</td>
-         <td class="${bal>=0?'amount-income':'amount-expense'}">${fmt(bal)}</td>
-         <td>${p.cnt || 0}</td>
-         <td>
-           <button class="btn btn-sm btn-primary" onclick="viewPersonDetail(${p.id})">记录</button>
-           <button class="btn btn-sm btn-secondary" onclick="editPerson(${p.id})">编辑</button>
-           <button class="btn btn-sm btn-danger" onclick="confirmDeletePerson(${p.id}, '${p.name}', ${p.cnt || 0})">删除</button>
-         </td></tr>`;
-      }).join('')
-    : '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:32px;">暂无人员</td></tr>';
+        const card = el('div', { className: 'mobile-tx-card' },
+          el('div', { className: 'mobile-tx-card-header' },
+            el('div', {},
+              el('div', { style: { fontSize: '12px', color: 'var(--text-muted)' } }, '姓名'),
+              el('div', { className: 'mobile-tx-card-name' }, p.name)
+            ),
+            el('div', { style: { textAlign: 'right' } },
+              el('div', { style: { fontSize: '12px', color: 'var(--text-muted)' } }, '余额'),
+              el('div', { className: `mobile-tx-card-amount ${bal>=0?'amount-income':'amount-expense'}` }, fmt(bal))
+            )
+          ),
+          el('div', { className: 'mobile-tx-card-meta' },
+            el('span', {}, `📞 电话: ${p.phone||'-'}`),
+            el('span', {}, `📍 地址: ${p.address||'-'}`),
+            el('span', {}, `📥 收礼: ${fmt(tInc)}`),
+            el('span', {}, `📤 送礼: ${fmt(tExp)}`),
+            el('span', {}, `📊 笔数: ${p.cnt || 0}`),
+            p.note ? el('span', {}, `📝 备注: ${p.note}`) : null
+          ),
+          el('div', { className: 'mobile-tx-card-actions' },
+            el('button', { className: 'btn btn-primary', onclick: () => viewPersonDetail(p.id) }, '记录'),
+            el('button', { className: 'btn btn-secondary', onclick: () => editPerson(p.id) }, '编辑'),
+            el('button', { className: 'btn btn-danger', onclick: () => confirmDeletePerson(p.id, p.name, p.cnt || 0) }, '删除')
+          )
+        );
+        container.appendChild(card);
+      });
+    }
+  } else {
+    // Web端：表格
+    document.getElementById('person-card-container').style.display = 'none';
+    document.getElementById('person-list-body').innerHTML = people.length
+      ? people.map(p => {
+          const tInc = Number(p.total_income) || 0;
+          const tExp = Number(p.total_expense) || 0;
+          const bal = Number(p.balance) || 0;
+          return `<tr><td><strong>${p.name}</strong></td>
+           <td style="color:var(--text-secondary);font-size:0.85rem;">${p.phone||'-'}</td>
+           <td style="color:var(--text-secondary);font-size:0.85rem;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(p.address||'').replace(/"/g,'&quot;')}">${p.address||'-'}</td>
+           <td style="color:var(--text-secondary);font-size:0.85rem;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(p.note||'').replace(/"/g,'&quot;')}">${p.note||'-'}</td>
+           <td class="amount-income">${fmt(tInc)}</td>
+           <td class="amount-expense">${fmt(tExp)}</td>
+           <td class="${bal>=0?'amount-income':'amount-expense'}">${fmt(bal)}</td>
+           <td>${p.cnt || 0}</td>
+           <td>
+             <button class="btn btn-sm btn-primary" onclick="viewPersonDetail(${p.id})">记录</button>
+             <button class="btn btn-sm btn-secondary" onclick="editPerson(${p.id})">编辑</button>
+             <button class="btn btn-sm btn-danger" onclick="confirmDeletePerson(${p.id}, '${p.name}', ${p.cnt || 0})">删除</button>
+           </td></tr>`;
+        }).join('')
+      : '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:32px;">暂无人员</td></tr>';
+  }
 }
 
 function searchPeople() {
