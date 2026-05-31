@@ -532,6 +532,7 @@ tbody tr:hover { background: var(--primary-light); }
     border-radius: 12px;
     box-shadow: var(--shadow);
     border: none !important;
+    position: relative;
   }
   .table-wrapper tbody tr:hover {
     background: var(--bg-card);
@@ -551,8 +552,8 @@ tbody tr:hover { background: var(--primary-light); }
     min-width: 60px;
     font-size: 12px;
   }
+  /* checkbox - 右上角 */
   .table-wrapper tbody td:first-child {
-    /* 是否导入 - checkbox */
     position: absolute;
     top: 12px;
     right: 12px;
@@ -563,9 +564,6 @@ tbody tr:hover { background: var(--primary-light); }
   .table-wrapper tbody td:first-child input[type="checkbox"] {
     width: 22px;
     height: 22px;
-  }
-  .table-wrapper tbody tr {
-    position: relative;
   }
   /* 姓名和金额放在第一行 */
   .table-wrapper tbody td:nth-child(3) {
@@ -734,14 +732,19 @@ tbody tr:hover { background: var(--primary-light); }
     flex: 1;
     padding: 10px;
   }
+
+  /* 移动端显示/隐藏 */
+  .mobile-only { display: block !important; }
+  .desktop-only { display: none !important; }
 }
 
 /* Web端隐藏移动端元素 */
 @media (min-width: 769px) {
-  .mobile-nav { display: none; }
-  .mobile-card-list { display: none; }
-  .mobile-preview-list { display: none; }
-  .mobile-only { display: none; }
+  .mobile-nav { display: none !important; }
+  .mobile-card-list { display: none !important; }
+  .mobile-preview-list { display: none !important; }
+  .mobile-only { display: none !important; }
+  .desktop-only { display: block !important; }
 }
 
 /* 基础显示设置 */
