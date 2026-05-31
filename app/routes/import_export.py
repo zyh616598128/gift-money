@@ -821,7 +821,15 @@ async def preview_photo(request: PhotoPreviewRequest, req: Request):
         # 发送完成信号
         yield f"data: {json.dumps({'done': True, 'total': len(total_data)}, ensure_ascii=False)}\n\n"
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # 禁用Nginx缓冲
+        }
+    )
 
 
 class MatchPersonRequest(BaseModel):
