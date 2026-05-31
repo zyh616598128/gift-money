@@ -1487,7 +1487,7 @@ function handlePhotoSelect(input) {
 }
 
 // 压缩图片
-function compressImage(dataUrl, callback, maxWidth = 1920, quality = 0.8) {
+function compressImage(dataUrl, callback, maxWidth = 1280, quality = 0.6) {
   const img = new Image();
   img.onload = () => {
     let width = img.width;
