@@ -139,6 +139,17 @@ function logout() {
   currentUser = null;
   localStorage.removeItem('gift_token');
   localStorage.removeItem('gift_user');
+  // 清空用户名显示
+  document.getElementById('user-name').textContent = '用户';
+  const mobileUserName = document.getElementById('mobile-user-name');
+  if (mobileUserName) mobileUserName.textContent = '用户';
+  // 关闭移动端用户弹窗
+  const mobileModal = document.getElementById('mobile-user-modal');
+  if (mobileModal) mobileModal.classList.remove('show');
+  // 关闭桌面端下拉菜单
+  const dropdown = document.getElementById('user-dropdown');
+  if (dropdown) dropdown.style.display = 'none';
+  // 显示登录页面
   document.getElementById('login-page').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
   document.getElementById('user-menu').style.display = 'none';
