@@ -851,7 +851,7 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
     return result
 
 
-def _compress_image(img_base64: str, max_size: int = 800, quality: int = 60, max_file_size: int = 100000) -> str:
+def _compress_image(img_base64: str, max_size: int = 800, quality: int = 50, max_file_size: int = 50000) -> str:
     """压缩图片到指定大小以下"""
     from PIL import Image
     import io
