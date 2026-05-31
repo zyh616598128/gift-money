@@ -996,199 +996,7 @@ function renderExcelPreview(data) {
     return 0;
   });
 
-  if (isMobile) {
-    // 移动端：渲染卡片列表
-    renderMobilePreview(pendingExcelData);
-  } else {
-    // Web端：渲染表格
-    renderDesktopPreview(pendingExcelData);
-  }
-}
-
-function renderMobilePreview(data) {
-  const container = document.getElementById('excel-preview-mobile');
-  container.innerHTML = '';
-  container.style.display = 'block';
-
-  if (data.length === 0) {
-    container.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>暂无记录</p></div>';
-    return;
-  }
-
-  data.forEach((item, idx) => {
-    let borderColor = '#22c55e';
-    let statusIcon = '✓';
-    if (item.needs_confirm) {
-      borderColor = '#f59e0b';
-      statusIcon = '⚠️';
-    } else if (item.auto_fixed) {
-      borderColor = '#22c55e';
-      statusIcon = '✓';
-    } else if (item.selected_person_id) {
-      borderColor = '#6366f1';
-      statusIcon = '✓';
-    }
-
-    const card = el('div', {
-      className: 'mobile-preview-card',
-      style: {
-        background: 'var(--bg-card)',
-        borderRadius: '12px',
-        padding: '16px',
-        marginBottom: '12px',
-        boxShadow: 'var(--shadow)',
-        borderLeft: `4px solid ${borderColor}`
-      }
-    });
-
-    // 头部：姓名和金额
-    const header = el('div', {
-      style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }
-    },
-      el('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
-        el('input', {
-          type: 'checkbox',
-          checked: true,
-          className: 'excel-row-check',
-          dataset: { idx: idx },
-          style: { width: '20px', height: '20px' }
-        }),
-        el('input', {
-          type: 'text',
-          value: item.name || '',
-          placeholder: '姓名',
-          style: { fontSize: '16px', fontWeight: '700', border: 'none', background: 'transparent', outline: 'none', width: '120px' },
-          oninput: function() { item.name = this.value; },
-          onblur: function() { rematchPerson(idx); }
-        })
-      ),
-      el('div', { style: { display: 'flex', alignItems: 'center', gap: '4px' } },
-        el('span', { style: { fontSize: '12px', color: borderColor } }, statusIcon),
-        el('input', {
-          type: 'number',
-          value: item.amount || 0,
-          placeholder: '金额',
-          style: { fontSize: '18px', fontWeight: '700', border: 'none', background: 'transparent', outline: 'none', width: '80px', textAlign: 'right', color: item.direction === 'income' ? 'var(--income)' : 'var(--expense)' },
-          oninput: function() { item.amount = parseFloat(this.value) || 0; }
-        })
-      )
-    );
-    card.appendChild(header);
-
-    // 详情行
-    const details = el('div', {
-      style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '14px' }
-    },
-      el('div', null,
-        el('label', { style: { color: 'var(--text-muted)', fontSize: '12px' } }, '日期'),
-        el('input', {
-          type: 'date',
-          value: item.date || '',
-          style: { width: '100%', padding: '8px', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '14px' },
-          oninput: function() { item.date = this.value; }
-        })
-      ),
-      el('div', null,
-        el('label', { style: { color: 'var(--text-muted)', fontSize: '12px' } }, '分类'),
-        el('select', {
-          style: { width: '100%', padding: '8px', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '14px' },
-          onchange: function() { item.category = this.value; }
-        }, ...['婚嫁', '葬礼', '生日', '乔迁', '开业', '其他'].map(c =>
-          el('option', { value: c, selected: item.category === c }, c)
-        ))
-      ),
-      el('div', null,
-        el('label', { style: { color: 'var(--text-muted)', fontSize: '12px' } }, '方向'),
-        el('select', {
-          style: { width: '100%', padding: '8px', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '14px' },
-          onchange: function() { item.direction = this.value; }
-        },
-          el('option', { value: 'income', selected: item.direction === 'income' }, '收礼'),
-          el('option', { value: 'expense', selected: item.direction === 'expense' }, '送礼')
-        )
-      ),
-      el('div', null,
-        el('label', { style: { color: 'var(--text-muted)', fontSize: '12px' } }, '备注'),
-        el('input', {
-          type: 'text',
-          value: item.note || '',
-          placeholder: '备注',
-          style: { width: '100%', padding: '8px', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '14px' },
-          oninput: function() { item.note = this.value; }
-        })
-      )
-    );
-    card.appendChild(details);
-
-    // 操作按钮
-    const actions = el('div', {
-      style: { display: 'flex', gap: '8px', marginTop: '12px' }
-    },
-      el('button', {
-        className: 'btn btn-secondary',
-        style: { flex: 1, padding: '8px', fontSize: '12px' },
-        onclick: () => { insertEmptyRecord(idx, 'above'); }
-      }, '↑ 上方插入'),
-      el('button', {
-        className: 'btn btn-secondary',
-        style: { flex: 1, padding: '8px', fontSize: '12px' },
-        onclick: () => { insertEmptyRecord(idx, 'below'); }
-      }, '↓ 下方插入')
-    );
-    card.appendChild(actions);
-
-    // 人员关联提示
-    if (item.needs_confirm && item.same_name_people && item.same_name_people.length > 0) {
-      const personHint = el('div', {
-        style: { marginTop: '12px', padding: '12px', background: '#fffbeb', borderRadius: '8px', fontSize: '13px' }
-      },
-        el('div', { style: { fontWeight: '600', color: '#f59e0b', marginBottom: '8px' } }, '⚠️ 需要选择关联人员'),
-        ...item.same_name_people.map((p, pi) =>
-          el('label', {
-            style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', cursor: 'pointer' }
-          },
-            el('input', {
-              type: 'radio',
-              name: `mobile-person-${idx}`,
-              value: p.id,
-              style: { width: '16px', height: '16px' },
-              onchange: function() { item.selected_person_id = p.id; }
-            }),
-            el('span', null, `${p.name} ${p.address ? `(${p.address})` : ''}`)
-          )
-        ),
-        el('label', {
-          style: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', cursor: 'pointer' }
-        },
-          el('input', {
-            type: 'radio',
-            name: `mobile-person-${idx}`,
-            value: 'new',
-            style: { width: '16px', height: '16px' },
-            onchange: function() {
-              item.selected_person_id = null;
-              const addrInput = card.querySelector('.new-addr-input');
-              if (addrInput) addrInput.style.display = 'block';
-            }
-          }),
-          el('span', null, '创建新人员')
-        ),
-        el('input', {
-          type: 'text',
-          placeholder: '输入地址区分同名人员',
-          className: 'new-addr-input',
-          style: { display: 'none', width: '100%', padding: '8px', marginTop: '8px', border: '1px solid var(--border)', borderRadius: '6px' },
-          oninput: function() { item.new_person_address = this.value; item.address = this.value; }
-        })
-      );
-      card.appendChild(personHint);
-    }
-
-    container.appendChild(card);
-  });
-}
-
-function renderDesktopPreview(data) {
+  // 统一渲染到表格
   const tbody = document.getElementById('excel-preview-body');
   tbody.innerHTML = '';
 
@@ -1204,7 +1012,8 @@ function renderDesktopPreview(data) {
     // Checkbox
     const cb = el('input', { type: 'checkbox', checked: true, className: 'excel-row-check' });
     cb.dataset.idx = idx;
-    tr.appendChild(cb);
+    const tdCb = el('td', { 'data-label': '导入' }, cb);
+    tr.appendChild(tdCb);
 
     // Date - 可编辑
     const dateInput = el('input', {
@@ -1213,10 +1022,10 @@ function renderDesktopPreview(data) {
       style: { width: '130px', padding: '4px 6px', border: '1px solid var(--border)', borderRadius: '4px', fontSize: '0.85rem' },
       oninput: function() { item.date = this.value; }
     });
-    tr.appendChild(el('td', null, dateInput));
+    tr.appendChild(el('td', { 'data-label': '日期' }, dateInput));
 
     // Name - 可编辑，根据状态显示不同颜色
-    const nameTd = el('td');
+    const nameTd = el('td', { 'data-label': '姓名' });
     let nameBorderColor = '#22c55e';  // 默认绿色边框（新人员）
     let statusIcon = '';
     if (item.needs_confirm) {
@@ -1249,7 +1058,7 @@ function renderDesktopPreview(data) {
       style: { width: '90px', padding: '4px 6px', border: '1px solid var(--border)', borderRadius: '4px', fontSize: '0.85rem', textAlign: 'right' },
       oninput: function() { item.amount = parseFloat(this.value) || 0; }
     });
-    tr.appendChild(el('td', { style: { whiteSpace: 'nowrap' } }, amountInput));
+    tr.appendChild(el('td', { style: { whiteSpace: 'nowrap' }, 'data-label': '金额' }, amountInput));
 
     // Category - 可编辑下拉选择
     const categorySelect = el('select', {
@@ -1262,7 +1071,7 @@ function renderDesktopPreview(data) {
       if (item.category === cat) opt.selected = true;
       categorySelect.appendChild(opt);
     });
-    tr.appendChild(el('td', null, categorySelect));
+    tr.appendChild(el('td', { 'data-label': '分类' }, categorySelect));
 
     // Direction - 可编辑下拉选择
     const dirSelect = el('select', {
@@ -1275,7 +1084,7 @@ function renderDesktopPreview(data) {
     else dirExpense.selected = true;
     dirSelect.appendChild(dirIncome);
     dirSelect.appendChild(dirExpense);
-    tr.appendChild(el('td', null, dirSelect));
+    tr.appendChild(el('td', { 'data-label': '方向' }, dirSelect));
 
     // Note - 可编辑
     const noteInput = el('input', {
@@ -1285,10 +1094,10 @@ function renderDesktopPreview(data) {
       style: { width: '100px', padding: '4px 6px', border: '1px solid var(--border)', borderRadius: '4px', fontSize: '0.85rem' },
       oninput: function() { item.note = this.value; }
     });
-    tr.appendChild(el('td', { style: { maxWidth: '120px' } }, noteInput));
+    tr.appendChild(el('td', { style: { maxWidth: '120px' }, 'data-label': '备注' }, noteInput));
 
     // 操作列 - 添加空白记录按钮
-    const actionTd = el('td', { style: { whiteSpace: 'nowrap' } });
+    const actionTd = el('td', { style: { whiteSpace: 'nowrap' }, 'data-label': '操作' });
     const btnAbove = el('button', {
       className: 'btn btn-sm btn-secondary',
       style: { padding: '2px 6px', fontSize: '0.75rem', marginRight: '4px' },
@@ -1306,7 +1115,7 @@ function renderDesktopPreview(data) {
     tr.appendChild(actionTd);
 
     // Person selection - 使用统一渲染函数
-    const tdPerson = el('td', { style: { minWidth: '200px' } });
+    const tdPerson = el('td', { style: { minWidth: '200px' }, 'data-label': '人员' });
     renderPersonCell(item, idx, tdPerson);
 
     tr.appendChild(tdPerson);

@@ -254,8 +254,7 @@
             <div style="margin-bottom:12px;color:var(--text-secondary);display:flex;justify-content:space-between;align-items:center;">
               <span id="excel-preview-count"></span>
             </div>
-            <!-- Web端表格 -->
-            <div class="table-wrapper desktop-only" style="max-height:400px;overflow-y:auto;">
+            <div class="table-wrapper" style="max-height:400px;overflow-y:auto;">
               <table>
                 <thead>
                   <tr>
@@ -273,12 +272,10 @@
                 <tbody id="excel-preview-body"></tbody>
               </table>
             </div>
-            <!-- 移动端卡片列表 -->
-            <div id="excel-preview-mobile" class="mobile-only" style="max-height:400px;overflow-y:auto;"></div>
             <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
               <button class="btn btn-primary" onclick="confirmImport()">✅ 确认导入</button>
               <button class="btn btn-secondary" onclick="cancelImport()">❌ 取消</button>
-              <label class="desktop-only" style="color:var(--text-secondary);font-size:0.9rem;">
+              <label style="color:var(--text-secondary);font-size:0.9rem;">
                 <input type="checkbox" id="excel-select-all" onchange="toggleExcelSelectAll()"> 全选/取消全选
               </label>
             </div>

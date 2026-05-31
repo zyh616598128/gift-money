@@ -508,100 +508,139 @@ tbody tr:hover { background: var(--primary-light); }
     padding-bottom: calc(16px + env(safe-area-inset-bottom));
   }
 
-  /* 表格改为卡片列表 */
-  .mobile-card-list {
+  /* 表格改为卡片列表 - 纯CSS实现 */
+  .table-wrapper {
+    overflow-x: visible;
+  }
+  .table-wrapper table {
+    display: block;
+  }
+  .table-wrapper thead {
+    display: none;
+  }
+  .table-wrapper tbody {
     display: flex;
     flex-direction: column;
     gap: 12px;
   }
-  .mobile-tx-card {
+  .table-wrapper tbody tr {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px;
     background: var(--bg-card);
     border-radius: 12px;
-    padding: 16px;
     box-shadow: var(--shadow);
+    border: none !important;
   }
-  .mobile-tx-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 12px;
-  }
-  .mobile-tx-card-name {
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--text);
-  }
-  .mobile-tx-card-amount {
-    font-size: 18px;
-    font-weight: 700;
-  }
-  .mobile-tx-card-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    font-size: 13px;
-    color: var(--text-secondary);
-    margin-bottom: 12px;
-  }
-  .mobile-tx-card-actions {
-    display: flex;
-    gap: 8px;
-  }
-  .mobile-tx-card-actions .btn {
-    flex: 1;
-    padding: 10px;
-  }
-
-  /* 预览表格改为卡片 */
-  .mobile-preview-card {
+  .table-wrapper tbody tr:hover {
     background: var(--bg-card);
-    border-radius: 12px;
-    padding: 16px;
-    margin-bottom: 12px;
-    box-shadow: var(--shadow);
   }
-  .mobile-preview-card.editing {
-    border: 2px solid var(--primary);
-  }
-  .mobile-preview-header {
+  .table-wrapper tbody td {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
+    gap: 8px;
+    padding: 0;
+    border: none;
+    font-size: 14px;
   }
-  .mobile-preview-name {
+  .table-wrapper tbody td:before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--text-secondary);
+    min-width: 60px;
+    font-size: 12px;
+  }
+  .table-wrapper tbody td:first-child {
+    /* 是否导入 - checkbox */
+    position: absolute;
+    top: 12px;
+    right: 12px;
+  }
+  .table-wrapper tbody td:first-child:before {
+    display: none;
+  }
+  .table-wrapper tbody td:first-child input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+  }
+  .table-wrapper tbody tr {
+    position: relative;
+  }
+  /* 姓名和金额放在第一行 */
+  .table-wrapper tbody td:nth-child(3) {
+    order: -2;
     font-size: 18px;
     font-weight: 700;
   }
-  .mobile-preview-amount {
+  .table-wrapper tbody td:nth-child(3):before {
+    display: none;
+  }
+  .table-wrapper tbody td:nth-child(3) input {
+    font-size: 18px;
+    font-weight: 700;
+    border: 2px solid var(--primary);
+    border-radius: 6px;
+    padding: 6px 8px;
+  }
+  .table-wrapper tbody td:nth-child(4) {
+    order: -1;
     font-size: 20px;
     font-weight: 700;
   }
-  .mobile-preview-body {
+  .table-wrapper tbody td:nth-child(4):before {
     display: none;
-    padding-top: 12px;
-    border-top: 1px solid var(--border);
-    margin-top: 12px;
   }
-  .mobile-preview-card.expanded .mobile-preview-body {
-    display: block;
+  .table-wrapper tbody td:nth-child(4) input {
+    font-size: 20px;
+    font-weight: 700;
+    border: none;
+    background: transparent;
+    width: 100px;
+    text-align: right;
   }
-  .mobile-preview-row {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 12px;
+  /* 日期 */
+  .table-wrapper tbody td:nth-child(2) {
+    order: 0;
   }
-  .mobile-preview-label {
-    color: var(--text-secondary);
-    font-size: 13px;
+  .table-wrapper tbody td:nth-child(2) input {
+    flex: 1;
   }
-  .mobile-preview-value {
-    font-weight: 500;
+  /* 分类、方向、备注 */
+  .table-wrapper tbody td:nth-child(5),
+  .table-wrapper tbody td:nth-child(6),
+  .table-wrapper tbody td:nth-child(7) {
+    order: 1;
   }
-  .mobile-preview-actions {
-    display: flex;
+  .table-wrapper tbody td:nth-child(5) select,
+  .table-wrapper tbody td:nth-child(6) select {
+    flex: 1;
+  }
+  .table-wrapper tbody td:nth-child(7) input {
+    flex: 1;
+  }
+  /* 操作按钮 */
+  .table-wrapper tbody td:nth-child(8) {
+    order: 2;
+    justify-content: flex-start;
     gap: 8px;
-    margin-top: 16px;
+    margin-top: 8px;
+  }
+  .table-wrapper tbody td:nth-child(8):before {
+    display: none;
+  }
+  .table-wrapper tbody td:nth-child(8) button {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+  /* 人员关联 */
+  .table-wrapper tbody td:nth-child(9) {
+    order: 3;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .table-wrapper tbody td:nth-child(9):before {
+    margin-bottom: 4px;
   }
 
   /* 表单单列 */
@@ -647,20 +686,53 @@ tbody tr:hover { background: var(--primary-light); }
     max-width: 100%;
   }
 
-  /* 导入预览区域 */
-  #excel-preview-area .table-wrapper {
-    display: none;
+  /* 图片切换器 */
+  #photo-switcher {
+    flex-wrap: wrap;
   }
-  .mobile-preview-list {
-    display: block;
+  #photo-switcher .btn {
+    padding: 8px 12px;
+    font-size: 13px;
   }
 
-  /* 隐藏桌面端预览列表容器 */
-  .desktop-only {
-    display: none;
+  /* 移动端记录卡片 */
+  .mobile-tx-card {
+    background: var(--bg-card);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: var(--shadow);
+    margin-bottom: 12px;
   }
-  .mobile-only {
-    display: block;
+  .mobile-tx-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+  }
+  .mobile-tx-card-name {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .mobile-tx-card-amount {
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .mobile-tx-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+  }
+  .mobile-tx-card-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .mobile-tx-card-actions .btn {
+    flex: 1;
+    padding: 10px;
   }
 }
 
