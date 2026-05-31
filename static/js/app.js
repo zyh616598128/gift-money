@@ -1574,6 +1574,12 @@ function initPhotoCategorySelect() {
 
 // 打开相机
 async function openCamera() {
+  // 检查是否为HTTPS环境
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    showToast('相机功能需要HTTPS环境，请使用相册选择或等待域名备案完成', 'error');
+    return;
+  }
+
   try {
     const constraints = {
       video: {
@@ -1592,7 +1598,13 @@ async function openCamera() {
     showToast('相机已打开，请对准礼簿拍照');
   } catch (err) {
     console.error('打开相机失败:', err);
-    showToast('无法访问相机，请检查权限或使用相册选择', 'error');
+    if (err.name === 'NotAllowedError') {
+      showToast('相机权限被拒绝，请在浏览器设置中允许访问相机', 'error');
+    } else if (err.name === 'NotFoundError') {
+      showToast('未找到相机设备', 'error');
+    } else {
+      showToast('无法访问相机，请使用相册选择', 'error');
+    }
   }
 }
 
