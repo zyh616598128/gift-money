@@ -929,7 +929,7 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
 
 
 def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
-    """同步调用腾讯云 Kimi API（OpenAI兼容格式）"""
+    """同步调用腾讯云 API（OpenAI兼容格式）"""
     # OpenAI 兼容格式
     payload = {
         "model": TENCENT_MODEL,
@@ -942,7 +942,9 @@ def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
                 ]
             }
         ],
-        "max_tokens": 4096
+        "max_tokens": 4096,
+        "enable_thinking": False,
+        "temperature": 0.1
     }
 
     print(f"Sending to Tencent API: model={TENCENT_MODEL}, url={TENCENT_API_URL}")
