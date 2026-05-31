@@ -723,7 +723,7 @@ async function loadPersonList(name) {
   const people = await res.json();
 
   if (isMobile) {
-    // 移动端：卡片列表
+    // 移动端：卡片列表，复用统计页样式
     const container = document.getElementById('person-card-container');
     container.style.display = 'block';
     container.innerHTML = '';
@@ -747,12 +747,9 @@ async function loadPersonList(name) {
             )
           ),
           el('div', { className: 'mobile-tx-card-meta' },
-            el('span', {}, `📞 电话: ${p.phone||'-'}`),
-            el('span', {}, `📍 地址: ${p.address||'-'}`),
             el('span', {}, `📥 收礼: ${fmt(tInc)}`),
             el('span', {}, `📤 送礼: ${fmt(tExp)}`),
-            el('span', {}, `📊 笔数: ${p.cnt || 0}`),
-            p.note ? el('span', {}, `📝 备注: ${p.note}`) : null
+            el('span', {}, `📊 笔数: ${p.cnt || 0}`)
           ),
           el('div', { className: 'mobile-tx-card-actions' },
             el('button', { className: 'btn btn-primary', onclick: () => viewPersonDetail(p.id) }, '记录'),
