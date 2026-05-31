@@ -855,6 +855,12 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
         "temperature": 0.1
     }
 
+    # 调试：打印payload结构（不含完整图片数据）
+    debug_payload = {**payload}
+    debug_payload["messages"] = [{**payload["messages"][0]}]
+    debug_payload["messages"][0]["image_data"] = f"<{len(img_base64)} chars>"
+    print(f"Sending payload: {json.dumps(debug_payload, ensure_ascii=False)}")
+
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
