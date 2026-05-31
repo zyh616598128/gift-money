@@ -1035,14 +1035,14 @@ def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
         raise Exception(f"AI返回格式异常: {str(e)}")
 
 
-def _compress_image(img_base64: str, max_file_size: int = 13333333) -> str:
-    """压缩图片到指定大小以下（10M以内不压缩）
+def _compress_image(img_base64: str, max_file_size: int = 266666) -> str:
+    """压缩图片到指定大小以下（200KB以内不压缩）
 
     Args:
         img_base64: base64编码的图片
-        max_file_size: 最大文件大小（base64字符数），默认约10MB
+        max_file_size: 最大文件大小（base64字符数），默认约200KB
     """
-    # 10M以内不压缩，直接返回
+    # 200KB以内不压缩，直接返回
     if len(img_base64) <= max_file_size:
         print(f"图片大小 {len(img_base64)} chars，无需压缩")
         return img_base64

@@ -872,6 +872,37 @@ async function confirmAddresses() {
   }
 }
 
+// 在指定索引处插入空白记录
+function insertEmptyRecord(idx, position) {
+  const emptyRecord = {
+    row_idx: pendingExcelData.length + 1,
+    date: new Date().toISOString().slice(0, 10),
+    original_name: '',
+    name: '',
+    amount: 0,
+    category: '其他',
+    direction: 'income',
+    address: '',
+    note: '',
+    auto_fixed: false,
+    same_name_people: [],
+    needs_confirm: false,
+    selected_person_id: null,
+    new_person_address: '',
+    isEmpty: true  // 标记为空白记录
+  };
+
+  if (position === 'above') {
+    pendingExcelData.splice(idx, 0, emptyRecord);
+  } else if (position === 'below') {
+    pendingExcelData.splice(idx + 1, 0, emptyRecord);
+  }
+
+  // 重新渲染
+  renderExcelPreview(pendingExcelData);
+  showToast('已添加空白记录');
+}
+
 function renderExcelPreview(data) {
   const tbody = document.getElementById('excel-preview-body');
   tbody.innerHTML = '';
@@ -983,6 +1014,24 @@ function renderExcelPreview(data) {
       oninput: function() { item.note = this.value; }
     });
     tr.appendChild(el('td', { style: { maxWidth: '120px' } }, noteInput));
+
+    // 操作列 - 添加空白记录按钮
+    const actionTd = el('td', { style: { whiteSpace: 'nowrap' } });
+    const btnAbove = el('button', {
+      className: 'btn btn-sm btn-secondary',
+      style: { padding: '2px 6px', fontSize: '0.75rem', marginRight: '4px' },
+      onclick: function() { insertEmptyRecord(idx, 'above'); },
+      title: '在当前行上方插入空白记录'
+    }, '↑ 插入');
+    const btnBelow = el('button', {
+      className: 'btn btn-sm btn-secondary',
+      style: { padding: '2px 6px', fontSize: '0.75rem' },
+      onclick: function() { insertEmptyRecord(idx, 'below'); },
+      title: '在当前行下方插入空白记录'
+    }, '↓ 插入');
+    actionTd.appendChild(btnAbove);
+    actionTd.appendChild(btnBelow);
+    tr.appendChild(actionTd);
 
     // Person selection - 使用统一渲染函数
     const tdPerson = el('td', { style: { minWidth: '200px' } });
@@ -1662,22 +1711,13 @@ async function submitPhotoRecognition() {
     return photo.split(',')[1];
   });
 
-  // 显示加载状态
+  // 显示加载状态（固定提示）
   const btn = document.getElementById('btn-photo-submit');
   const originalText = btn.textContent;
   btn.textContent = '🤖 AI识别中...';
   btn.disabled = true;
 
-  const totalImages = images.length;
-  const startTime = Date.now();
-
-  // 更新进度显示函数
-  function updateProgress(status) {
-    const elapsed = Math.round((Date.now() - startTime) / 1000);
-    showImportLoading(`${status}（已用时 ${elapsed} 秒）`);
-  }
-
-  updateProgress('准备识别照片...');
+  showImportLoading('正在识别礼簿照片，大约需要50秒，请耐心等待...');
 
   // 初始化预览区
   pendingExcelData = [];
@@ -1689,8 +1729,6 @@ async function submitPhotoRecognition() {
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = 'Bearer ' + token;
 
-    updateProgress('发送图片到服务器...');
-
     const response = await fetch(API + '/api/import/photo-preview', {
       method: 'POST',
       headers,
@@ -1701,9 +1739,6 @@ async function submitPhotoRecognition() {
       const err = await response.json().catch(() => ({}));
       throw new Error(err.detail || '识别失败');
     }
-
-    // 请求已发送，更新状态
-    updateProgress('已连接服务器，等待AI响应...');
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -1725,14 +1760,9 @@ async function submitPhotoRecognition() {
             if (data.done) {
               // 识别完成
               hideImportLoading();
-              const totalTime = Math.round((Date.now() - startTime) / 1000);
-              showToast(`识别完成！共 ${data.total} 条记录，耗时 ${totalTime} 秒`);
+              showToast(`识别完成！共 ${data.total} 条记录`);
             } else if (data.data && data.data.length > 0) {
-              // 更新进度
-              const elapsed = Math.round((Date.now() - startTime) / 1000);
-              updateProgress(`正在识别照片 (${data.batch}/${data.total_batches})，已识别 ${data.accumulated.total} 条`);
-
-              // 追加数据到预览
+              // 追加数据到预览（不更新进度提示）
               pendingExcelData.push(...data.data);
 
               // 更新计数
@@ -1742,9 +1772,6 @@ async function submitPhotoRecognition() {
 
               // 渲染预览（追加模式）
               renderExcelPreview(pendingExcelData);
-            } else if (data.status) {
-              // 显示状态更新
-              updateProgress(data.status);
             }
           } catch (e) {
             console.error('解析SSE数据失败:', e);
