@@ -316,7 +316,7 @@
           </div>
         </div>
         <div class="card">
-          <div class="table-wrapper">
+          <div class="table-wrapper desktop-only">
             <table>
               <thead>
                 <tr>
@@ -328,6 +328,8 @@
               <tbody id="tx-table-body"></tbody>
             </table>
           </div>
+          <!-- 移动端卡片列表容器 -->
+          <div id="tx-card-container" class="mobile-only"></div>
           <div id="pagination" class="pagination"></div>
         </div>
       </div>
@@ -437,8 +439,8 @@
     </div>
   </div>
 
-  <!-- User Menu -->
-  <div id="user-menu" class="user-menu" style="display:none;">
+  <!-- User Menu (Web) -->
+  <div id="user-menu" class="user-menu desktop-only" style="display:none;">
     <div class="user-info" onclick="toggleUserMenu()">
       <span id="user-avatar">👤</span>
       <span id="user-name">用户</span>
@@ -447,6 +449,48 @@
     <div class="user-dropdown" id="user-dropdown">
       <div class="dropdown-item" onclick="showChangePassword()">🔑 修改密码</div>
       <div class="dropdown-item" onclick="logout()">🚪 退出登录</div>
+    </div>
+  </div>
+
+  <!-- Mobile Bottom Navigation -->
+  <nav class="mobile-nav" id="mobile-nav" style="display:none;">
+    <button class="mobile-nav-item active" onclick="showTabMobile('summary')">
+      <span class="icon">📊</span>
+      <span>统计</span>
+    </button>
+    <button class="mobile-nav-item" onclick="showTabMobile('add')">
+      <span class="icon">➕</span>
+      <span>添加</span>
+    </button>
+    <button class="mobile-nav-item" onclick="showTabMobile('list')">
+      <span class="icon">📋</span>
+      <span>记录</span>
+    </button>
+    <button class="mobile-nav-item" onclick="showTabMobile('people')">
+      <span class="icon">👥</span>
+      <span>人员</span>
+    </button>
+    <button class="mobile-nav-item" onclick="showMobileUserMenu()">
+      <span class="icon">👤</span>
+      <span>我的</span>
+    </button>
+  </nav>
+
+  <!-- Mobile User Menu Modal -->
+  <div class="modal-overlay" id="mobile-user-modal">
+    <div class="modal" style="max-width:400px;">
+      <div class="modal-title">👤 我的</div>
+      <div style="text-align:center;padding:20px 0;">
+        <div style="font-size:48px;margin-bottom:12px;">👤</div>
+        <div style="font-size:18px;font-weight:600;" id="mobile-user-name">用户</div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:16px;">
+        <div class="dropdown-item" style="padding:14px 0;border-radius:8px;" onclick="showChangePassword();document.getElementById('mobile-user-modal').classList.remove('show')">🔑 修改密码</div>
+        <div class="dropdown-item" style="padding:14px 0;border-radius:8px;color:var(--expense);" onclick="logout()">🚪 退出登录</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" style="width:100%;" onclick="document.getElementById('mobile-user-modal').classList.remove('show')">关闭</button>
+      </div>
     </div>
   </div>
 

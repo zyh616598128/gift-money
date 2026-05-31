@@ -396,3 +396,284 @@ tbody tr:hover { background: var(--primary-light); }
   background: #dc2626;
   transform: scale(1.1);
 }
+
+/* ── Mobile Optimizations ── */
+@media (max-width: 768px) {
+  /* 隐藏顶部导航 */
+  .nav-tabs { display: none; }
+
+  /* 底部导航栏 */
+  .mobile-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg-card);
+    border-top: 1px solid var(--border);
+    padding: 8px 0 env(safe-area-inset-bottom);
+    z-index: 100;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+  }
+  .mobile-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 4px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .mobile-nav-item .icon {
+    font-size: 22px;
+  }
+  .mobile-nav-item.active {
+    color: var(--primary);
+  }
+  .mobile-nav-item:active {
+    transform: scale(0.95);
+  }
+
+  /* 内容区域留出底部导航空间 */
+  #app .container {
+    padding-bottom: 80px;
+  }
+
+  /* 隐藏Web端的用户菜单 */
+  .user-menu { display: none; }
+
+  /* 移动端用户菜单放在底部导航 */
+  .mobile-user-btn {
+    position: relative;
+  }
+
+  /* 模态框全屏 */
+  .modal {
+    max-width: 100%;
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    padding: 16px;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .modal-title {
+    position: sticky;
+    top: 0;
+    background: var(--bg-card);
+    padding: 8px 0 16px;
+    margin-bottom: 12px;
+    z-index: 1;
+  }
+  .modal-actions {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-card);
+    padding: 16px 0 0;
+    margin-top: 16px;
+  }
+
+  /* 抽屉从底部弹出 */
+  .drawer-overlay {
+    justify-content: center;
+    align-items: flex-end;
+  }
+  .drawer {
+    width: 100%;
+    height: auto;
+    max-height: 90vh;
+    border-radius: 20px 20px 0 0;
+    animation: slideUp 0.3s ease;
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  .drawer-header {
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 1;
+  }
+  .drawer-footer {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg);
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+
+  /* 表格改为卡片列表 */
+  .mobile-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .mobile-tx-card {
+    background: var(--bg-card);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: var(--shadow);
+  }
+  .mobile-tx-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+  }
+  .mobile-tx-card-name {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .mobile-tx-card-amount {
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .mobile-tx-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+  }
+  .mobile-tx-card-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .mobile-tx-card-actions .btn {
+    flex: 1;
+    padding: 10px;
+  }
+
+  /* 预览表格改为卡片 */
+  .mobile-preview-card {
+    background: var(--bg-card);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+    box-shadow: var(--shadow);
+  }
+  .mobile-preview-card.editing {
+    border: 2px solid var(--primary);
+  }
+  .mobile-preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .mobile-preview-name {
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .mobile-preview-amount {
+    font-size: 20px;
+    font-weight: 700;
+  }
+  .mobile-preview-body {
+    display: none;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    margin-top: 12px;
+  }
+  .mobile-preview-card.expanded .mobile-preview-body {
+    display: block;
+  }
+  .mobile-preview-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .mobile-preview-label {
+    color: var(--text-secondary);
+    font-size: 13px;
+  }
+  .mobile-preview-value {
+    font-weight: 500;
+  }
+  .mobile-preview-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  /* 表单单列 */
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* 按钮加大 */
+  .btn {
+    padding: 12px 20px;
+  }
+  input, select, textarea {
+    padding: 12px;
+    font-size: 16px; /* 防止iOS缩放 */
+  }
+
+  /* 筛选区域 */
+  .filter-bar {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .filter-bar .form-group {
+    width: 100%;
+  }
+
+  /* 统计卡片 */
+  .summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .summary-card {
+    padding: 14px;
+  }
+  .summary-card .value {
+    font-size: 20px;
+  }
+
+  /* 拍照区域 */
+  .photo-upload-area {
+    padding: 16px;
+  }
+  #camera-preview {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* 导入预览区域 */
+  #excel-preview-area .table-wrapper {
+    display: none;
+  }
+  .mobile-preview-list {
+    display: block;
+  }
+
+  /* 隐藏桌面端预览列表容器 */
+  .desktop-only {
+    display: none;
+  }
+  .mobile-only {
+    display: block;
+  }
+}
+
+/* Web端隐藏移动端元素 */
+@media (min-width: 769px) {
+  .mobile-nav { display: none; }
+  .mobile-card-list { display: none; }
+  .mobile-preview-list { display: none; }
+  .mobile-only { display: none; }
+}
+
+/* 基础显示设置 */
+.mobile-nav { display: none; }
+.mobile-card-list { display: none; }
+.mobile-preview-list { display: none; }
+.mobile-only { display: none; }

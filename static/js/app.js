@@ -6,6 +6,7 @@ let token = localStorage.getItem('gift_token');
 let currentPage = 1;
 const pageSize = 20;
 let pendingExcelData = null;
+let isMobile = window.innerWidth <= 768;  // 移动端检测
 
 /* ── Utils ── */
 function fmt(n) {
@@ -83,12 +84,55 @@ function switchLoginTab(tab) {
 function enterApp() {
   document.getElementById('login-page').style.display = 'none';
   document.getElementById('app').style.display = 'block';
-  document.getElementById('user-menu').style.display = 'block';
   document.getElementById('user-name').textContent = currentUser?.display_name || '用户';
+  document.getElementById('mobile-user-name').textContent = currentUser?.display_name || '用户';
+
+  // 根据设备显示不同的导航
+  if (isMobile) {
+    document.getElementById('mobile-nav').style.display = 'flex';
+    document.getElementById('user-menu').style.display = 'none';
+  } else {
+    document.getElementById('mobile-nav').style.display = 'none';
+    document.getElementById('user-menu').style.display = 'block';
+  }
+
   loadCategories();
   loadSummary();
   loadTransactions(1);
 }
+
+function showTabMobile(name) {
+  document.querySelectorAll('.tab-content').forEach(t => t.style.display = 'none');
+  document.querySelectorAll('.mobile-nav-item').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).style.display = 'block';
+  event.target.closest('.mobile-nav-item').classList.add('active');
+  if (name === 'summary') loadSummary();
+  if (name === 'people') loadPersonList();
+  if (name === 'list') loadCategories();
+}
+
+function showMobileUserMenu() {
+  document.getElementById('mobile-user-modal').classList.add('show');
+}
+
+// 监听窗口大小变化
+window.addEventListener('resize', () => {
+  const wasMobile = isMobile;
+  isMobile = window.innerWidth <= 768;
+
+  // 如果设备类型变化，重新渲染
+  if (wasMobile !== isMobile && document.getElementById('app').style.display !== 'none') {
+    if (isMobile) {
+      document.getElementById('mobile-nav').style.display = 'flex';
+      document.getElementById('user-menu').style.display = 'none';
+    } else {
+      document.getElementById('mobile-nav').style.display = 'none';
+      document.getElementById('user-menu').style.display = 'block';
+    }
+    // 重新渲染当前列表
+    loadTransactions(currentPage);
+  }
+});
 
 function logout() {
   token = null;
@@ -262,22 +306,61 @@ async function loadTransactions(page) {
   const res = await api(API + '/api/transactions?' + params);
   if (!res) return;
   const data = await res.json();
-  const tbody = document.getElementById('tx-table-body');
-  tbody.innerHTML = (data.data || []).map(r => {
-    const amt = Number(r.amount) || 0;
-    const address = r.person_address || '';
-    return `<tr data-id="${r.id}">
-      <td>${r.date}</td><td>${r.name}</td>
-      <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${address}">${address || '-'}</td>
-      <td><span class="tag ${tagClass(r.category)}">${r.category}</span></td>
-      <td class="${r.direction==='income'?'amount-income':'amount-expense'}">${r.direction==='income'?'+':'-'}${fmt(amt)}</td>
-      <td>${r.direction==='income'?'收礼':'送礼'}</td>
-      <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.note||'').replace(/"/g,'&quot;')}">${r.note||'-'}</td>
-      <td>
-        <button class="btn btn-sm btn-secondary" onclick="editTransaction(${r.id})">编辑</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteTransaction(${r.id})">删除</button>
-      </td></tr>`;
-  }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:32px;">暂无记录</td></tr>';
+
+  if (isMobile) {
+    // 移动端：卡片列表
+    const container = document.getElementById('tx-card-container');
+    container.style.display = 'block';
+    document.querySelector('.table-wrapper.desktop-only').style.display = 'none';
+    container.innerHTML = '';
+
+    if ((data.data || []).length === 0) {
+      container.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>暂无记录</p></div>';
+    } else {
+      const cardList = el('div', { className: 'mobile-card-list' });
+      (data.data || []).forEach(r => {
+        const amt = Number(r.amount) || 0;
+        const card = el('div', { className: 'mobile-tx-card' },
+          el('div', { className: 'mobile-tx-card-header' },
+            el('div', { className: 'mobile-tx-card-name' }, r.name),
+            el('div', { className: `mobile-tx-card-amount ${r.direction==='income'?'amount-income':'amount-expense'}` },
+              (r.direction==='income'?'+':'-') + fmt(amt))
+          ),
+          el('div', { className: 'mobile-tx-card-meta' },
+            el('span', {}, `📅 ${r.date}`),
+            el('span', {}, `🏷️ ${r.category}`),
+            el('span', {}, r.direction==='income'?'📥 收礼':'📤 送礼')
+          ),
+          el('div', { className: 'mobile-tx-card-actions' },
+            el('button', { className: 'btn btn-secondary', onclick: () => editTransaction(r.id) }, '编辑'),
+            el('button', { className: 'btn btn-danger', onclick: () => deleteTransaction(r.id) }, '删除')
+          )
+        );
+        cardList.appendChild(card);
+      });
+      container.appendChild(cardList);
+    }
+  } else {
+    // Web端：表格
+    document.getElementById('tx-card-container').style.display = 'none';
+    document.querySelector('.table-wrapper.desktop-only').style.display = 'block';
+    const tbody = document.getElementById('tx-table-body');
+    tbody.innerHTML = (data.data || []).map(r => {
+      const amt = Number(r.amount) || 0;
+      const address = r.person_address || '';
+      return `<tr data-id="${r.id}">
+        <td>${r.date}</td><td>${r.name}</td>
+        <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${address}">${address || '-'}</td>
+        <td><span class="tag ${tagClass(r.category)}">${r.category}</span></td>
+        <td class="${r.direction==='income'?'amount-income':'amount-expense'}">${r.direction==='income'?'+':'-'}${fmt(amt)}</td>
+        <td>${r.direction==='income'?'收礼':'送礼'}</td>
+        <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.note||'').replace(/"/g,'&quot;')}">${r.note||'-'}</td>
+        <td>
+          <button class="btn btn-sm btn-secondary" onclick="editTransaction(${r.id})">编辑</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteTransaction(${r.id})">删除</button>
+        </td></tr>`;
+    }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:32px;">暂无记录</td></tr>';
+  }
 
   document.getElementById('pagination').innerHTML = `
     <button class="page-btn" onclick="loadTransactions(${page - 1})" ${page <= 1 ? 'disabled' : ''}>上一页</button>
