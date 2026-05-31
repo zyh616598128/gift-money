@@ -28,9 +28,9 @@ LOCAL_API_URL = os.environ.get("LOCAL_API_URL", "http://127.0.0.1:1234/v1/chat/c
 LOCAL_MODEL = os.environ.get("LOCAL_MODEL", "qwen/qwen3.6-35b-a3b")
 
 # 腾讯云 API 配置（Anthropic 兼容格式）
-TENCENT_API_URL = os.environ.get("TENCENT_API_URL", "")
+TENCENT_API_URL = os.environ.get("TENCENT_API_URL", "https://api.lkeap.cloud.tencent.com/coding/anthropic")
 TENCENT_API_KEY = os.environ.get("TENCENT_API_KEY", "")
-TENCENT_MODEL = os.environ.get("TENCENT_MODEL", "kimi-k2-0711-preview")
+TENCENT_MODEL = os.environ.get("TENCENT_MODEL", "kimi-k2.5")
 
 
 @router.get("/categories/list")
@@ -929,8 +929,8 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
 
 
 def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
-    """同步调用腾讯云API（OpenAI兼容格式）"""
-    # OpenAI 兼容格式
+    """同步调用腾讯云 Coding Anthropic API"""
+    # Anthropic 格式
     payload = {
         "model": TENCENT_MODEL,
         "messages": [
@@ -945,12 +945,13 @@ def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
         "max_tokens": 4096
     }
 
-    print(f"Sending to Tencent API: model={TENCENT_MODEL}")
+    print(f"Sending to Tencent API: model={TENCENT_MODEL}, url={TENCENT_API_URL}")
 
-    # 腾讯云 Coding API 认证头
+    # Anthropic API 认证头
     headers = {
         "Content-Type": "application/json",
-        "Authorization": TENCENT_API_KEY
+        "x-api-key": TENCENT_API_KEY,
+        "anthropic-version": "2023-06-01"
     }
 
     response = httpx.post(
