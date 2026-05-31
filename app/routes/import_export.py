@@ -877,27 +877,22 @@ def match_person(request: MatchPersonRequest, req: Request):
 def _build_photo_prompt(date: str = None, category: str = None, note: str = None, user_prompt: str = None) -> str:
     """构建识别提示词"""
 
-    user_hints = []
+    hints = []
     if date:
-        user_hints.append(f"日期统一为: {date}")
+        hints.append(f"日期={date}")
     if category:
-        user_hints.append(f"分类统一为: {category}")
+        hints.append(f"分类={category}")
     if note:
-        user_hints.append(f"备注统一为: {note}")
+        hints.append(f"备注={note}")
 
-    hints_text = "\n".join(user_hints) if user_hints else "无额外提示"
-
-    # 用户自定义提示词
-    custom_prompt = f"\n用户额外说明: {user_prompt}" if user_prompt else ""
+    hints_text = " ".join(hints) if hints else ""
+    custom = f" {user_prompt}" if user_prompt else ""
 
     return f"""/no_think
-识别礼簿照片中的记录，直接返回JSON数组:
-[
-  {{"name": "姓名", "amount": 金额数字, "date": "YYYY-MM-DD", "category": "婚嫁/葬礼/生日/乔迁/其他", "direction": "收礼", "address": "", "note": ""}}
-]
-
-用户提示: {hints_text}{custom_prompt}
-只返回JSON，不要思考过程。"""
+识别礼簿，返回JSON数组:
+[{{"name":"姓名","amount":金额,"date":"YYYY-MM-DD","category":"婚嫁/葬礼/生日/其他","direction":"收礼"}}]
+{hints_text}{custom}
+只返回JSON。"""
 
 
 async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
@@ -942,7 +937,7 @@ def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
                 ]
             }
         ],
-        "max_tokens": 4096,
+        "max_tokens": 2048,
         "temperature": 1,
         "enable_thinking": False
     }
@@ -1001,8 +996,8 @@ def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
         raise Exception(f"AI返回格式异常: {str(e)}")
 
 
-def _compress_image(img_base64: str, max_size: int = 800, quality: int = 50, max_file_size: int = 50000) -> str:
-    """压缩图片到指定大小以下"""
+def _compress_image(img_base64: str, max_size: int = 600, quality: int = 40, max_file_size: int = 30000) -> str:
+    """压缩图片到指定大小以下（更小更快）"""
     from PIL import Image
     import io
 
