@@ -678,6 +678,11 @@ async def preview_photo(request: PhotoPreviewRequest, req: Request):
     if not request.images:
         raise HTTPException(status_code=400, detail="请至少上传一张照片")
 
+    # 调试日志：检查图片数据
+    print(f"Received {len(request.images)} images")
+    for i, img in enumerate(request.images):
+        print(f"Image {i}: length={len(img) if img else 0}, start={img[:50] if img and len(img) > 50 else img}")
+
     # 构建提示词
     prompt = _build_photo_prompt(request.date, request.category, request.note)
 
