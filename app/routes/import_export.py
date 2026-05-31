@@ -881,7 +881,6 @@ def _sync_call_deepseek_httpx(img_base64: str, prompt: str) -> List[dict]:
         headers=headers,
         timeout=120.0
     )
-    )
 
     if response.status_code != 200:
         error_text = response.text
