@@ -31,6 +31,11 @@ class BatchDeleteRequest(BaseModel):
     ids: List[int]
 
 
+class BatchUpdateRequest(BaseModel):
+    ids: List[int]
+    updates: dict
+
+
 def get_current_user(request: Request) -> dict:
     """获取当前登录用户信息，如果未登录则抛出异常"""
     auth_header = request.headers.get("Authorization")
@@ -307,5 +312,39 @@ def delete_transactions_batch(req: BatchDeleteRequest, request: Request):
         )
         conn.commit()
         return {"count": result.rowcount, "message": f"成功删除 {result.rowcount} 条记录"}
+    finally:
+        conn.close()
+
+
+@router.post("/batch-update")
+def update_transactions_batch(req: BatchUpdateRequest, request: Request):
+    """批量更新交易记录"""
+    user = get_current_user(request)
+    if not req.ids:
+        raise HTTPException(status_code=400, detail="请选择要修改的记录")
+
+    if not req.updates:
+        raise HTTPException(status_code=400, detail="请提供修改内容")
+
+    # 只允许更新的字段
+    allowed_fields = {"date", "category", "direction", "note"}
+    updates = {k: v for k, v in req.updates.items() if k in allowed_fields}
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="没有有效的更新字段")
+
+    conn = get_connection()
+    try:
+        # 构建SET子句
+        set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
+        placeholders = ",".join("?" for _ in req.ids)
+        params = list(updates.values()) + list(req.ids) + [user["user_id"]]
+
+        result = conn.execute(
+            f"UPDATE transactions SET {set_clause} WHERE id IN ({placeholders}) AND user_id = ?",
+            params,
+        )
+        conn.commit()
+        return {"updated": result.rowcount, "message": f"成功修改 {result.rowcount} 条记录"}
     finally:
         conn.close()

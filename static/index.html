@@ -307,10 +307,17 @@
           </div>
         </div>
         <div class="card">
+          <!-- 批量操作栏 -->
+          <div id="batch-ops" class="batch-operations" style="display:none;">
+            <span id="batch-count">已选 0 条</span>
+            <button class="btn btn-sm btn-primary" onclick="openBatchEditModal()">✏️ 批量修改</button>
+            <button class="btn btn-sm btn-ghost" onclick="clearSelection()">取消选择</button>
+          </div>
           <div class="table-wrapper desktop-only">
             <table>
               <thead>
                 <tr>
+                  <th style="width:40px;"><input type="checkbox" id="select-all-tx" onchange="toggleSelectAll(this.checked)"></th>
                   <th class="sortable" onclick="toggleSort('date')">日期 <span id="sort-date-icon" class="sort-icon">↓</span></th>
                   <th>人名</th><th>地址</th><th>分类</th>
                   <th>金额</th><th>方向</th><th>备注</th><th>操作</th>
@@ -428,6 +435,39 @@
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="document.getElementById('edit-modal').classList.remove('show')">取消</button>
         <button class="btn btn-primary" onclick="saveEdit()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batch Edit Modal -->
+  <div class="modal-overlay" id="batch-edit-modal">
+    <div class="modal">
+      <div class="modal-title">✏️ 批量修改 <span id="batch-edit-count"></span></div>
+      <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:16px;">只修改勾选的字段，未勾选的保持不变</p>
+      <div class="form-grid" style="margin-bottom:12px;">
+        <div class="form-group">
+          <label><input type="checkbox" id="batch-edit-date-check" onchange="toggleBatchField('date')"> 日期</label>
+          <input id="batch-edit-date" type="date" disabled>
+        </div>
+        <div class="form-group">
+          <label><input type="checkbox" id="batch-edit-category-check" onchange="toggleBatchField('category')"> 分类</label>
+          <select id="batch-edit-category" disabled></select>
+        </div>
+        <div class="form-group">
+          <label><input type="checkbox" id="batch-edit-direction-check" onchange="toggleBatchField('direction')"> 方向</label>
+          <select id="batch-edit-direction" disabled>
+            <option value="income">收礼</option>
+            <option value="expense">送礼</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label><input type="checkbox" id="batch-edit-note-check" onchange="toggleBatchField('note')"> 备注</label>
+        <textarea id="batch-edit-note" rows="2" disabled placeholder="输入新备注"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="document.getElementById('batch-edit-modal').classList.remove('show')">取消</button>
+        <button class="btn btn-primary" onclick="saveBatchEdit()">保存修改</button>
       </div>
     </div>
   </div>

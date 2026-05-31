@@ -430,6 +430,7 @@ async function loadTransactions(page) {
       const amt = Number(r.amount) || 0;
       const address = r.person_address || '';
       return `<tr data-id="${r.id}">
+        <td><input type="checkbox" class="tx-checkbox" data-id="${r.id}" onchange="updateBatchCount()"></td>
         <td>${r.date}</td><td>${r.name}</td>
         <td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${address}">${address || '-'}</td>
         <td><span class="tag ${tagClass(r.category)}">${r.category}</span></td>
@@ -440,7 +441,10 @@ async function loadTransactions(page) {
           <button class="btn btn-sm btn-secondary" onclick="editTransaction(${r.id})">编辑</button>
           <button class="btn btn-sm btn-danger" onclick="deleteTransaction(${r.id})">删除</button>
         </td></tr>`;
-    }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:32px;">暂无记录</td></tr>';
+    }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:32px;">暂无记录</td></tr>';
+    // 重置全选状态
+    document.getElementById('select-all-tx').checked = false;
+    updateBatchCount();
   }
 
   document.getElementById('pagination').innerHTML = `
@@ -542,6 +546,138 @@ async function deleteTransaction(id) {
     showToast('删除成功');
     loadTransactions(currentPage);
     loadSummary();
+  }
+}
+
+/* ── Batch Operations ── */
+let selectedIds = new Set();
+
+function toggleSelectAll(checked) {
+  const checkboxes = document.querySelectorAll('.tx-checkbox');
+  checkboxes.forEach(cb => {
+    cb.checked = checked;
+    if (checked) {
+      selectedIds.add(parseInt(cb.dataset.id));
+    } else {
+      selectedIds.delete(parseInt(cb.dataset.id));
+    }
+  });
+  updateBatchCount();
+}
+
+function updateBatchCount() {
+  const checkboxes = document.querySelectorAll('.tx-checkbox:checked');
+  selectedIds.clear();
+  checkboxes.forEach(cb => selectedIds.add(parseInt(cb.dataset.id)));
+
+  const batchOps = document.getElementById('batch-ops');
+  const batchCount = document.getElementById('batch-count');
+
+  if (selectedIds.size > 0) {
+    batchOps.style.display = 'flex';
+    batchCount.textContent = `已选 ${selectedIds.size} 条`;
+  } else {
+    batchOps.style.display = 'none';
+  }
+
+  // 更新全选框状态
+  const allCheckbox = document.getElementById('select-all-tx');
+  const allCheckboxes = document.querySelectorAll('.tx-checkbox');
+  if (allCheckbox && allCheckboxes.length > 0) {
+    allCheckbox.checked = selectedIds.size === allCheckboxes.length;
+  }
+}
+
+function clearSelection() {
+  selectedIds.clear();
+  document.querySelectorAll('.tx-checkbox').forEach(cb => cb.checked = false);
+  document.getElementById('select-all-tx').checked = false;
+  document.getElementById('batch-ops').style.display = 'none';
+}
+
+function openBatchEditModal() {
+  if (selectedIds.size === 0) {
+    showToast('请先选择记录', 'error');
+    return;
+  }
+
+  document.getElementById('batch-edit-count').textContent = `(${selectedIds.size}条记录)`;
+
+  // 重置表单
+  document.getElementById('batch-edit-date-check').checked = false;
+  document.getElementById('batch-edit-category-check').checked = false;
+  document.getElementById('batch-edit-direction-check').checked = false;
+  document.getElementById('batch-edit-note-check').checked = false;
+  document.getElementById('batch-edit-date').value = '';
+  document.getElementById('batch-edit-note').value = '';
+  document.getElementById('batch-edit-date').disabled = true;
+  document.getElementById('batch-edit-category').disabled = true;
+  document.getElementById('batch-edit-direction').disabled = true;
+  document.getElementById('batch-edit-note').disabled = true;
+
+  // 填充分类选项
+  const catSel = document.getElementById('batch-edit-category');
+  const editCatSel = document.getElementById('edit-category');
+  catSel.innerHTML = editCatSel.innerHTML;
+
+  document.getElementById('batch-edit-modal').classList.add('show');
+}
+
+function toggleBatchField(field) {
+  const checkbox = document.getElementById(`batch-edit-${field}-check`);
+  const input = document.getElementById(`batch-edit-${field}`);
+  input.disabled = !checkbox.checked;
+}
+
+async function saveBatchEdit() {
+  const updates = {};
+
+  if (document.getElementById('batch-edit-date-check').checked) {
+    updates.date = document.getElementById('batch-edit-date').value;
+    if (!updates.date) {
+      showToast('请选择日期', 'error');
+      return;
+    }
+  }
+  if (document.getElementById('batch-edit-category-check').checked) {
+    updates.category = document.getElementById('batch-edit-category').value;
+    if (!updates.category) {
+      showToast('请选择分类', 'error');
+      return;
+    }
+  }
+  if (document.getElementById('batch-edit-direction-check').checked) {
+    updates.direction = document.getElementById('batch-edit-direction').value;
+  }
+  if (document.getElementById('batch-edit-note-check').checked) {
+    updates.note = document.getElementById('batch-edit-note').value.trim();
+  }
+
+  if (Object.keys(updates).length === 0) {
+    showToast('请至少选择一个修改项', 'error');
+    return;
+  }
+
+  const res = await api(API + '/api/transactions/batch-update', {
+    method: 'POST',
+    body: JSON.stringify({
+      ids: Array.from(selectedIds),
+      updates: updates
+    })
+  });
+
+  if (!res) return;
+
+  if (res.ok) {
+    const result = await res.json();
+    showToast(`成功修改 ${result.updated} 条记录`);
+    document.getElementById('batch-edit-modal').classList.remove('show');
+    clearSelection();
+    loadTransactions(currentPage);
+    loadSummary();
+  } else {
+    const err = await res.json().catch(() => ({}));
+    showToast(err.detail || '批量修改失败', 'error');
   }
 }
 
