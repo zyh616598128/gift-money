@@ -25,7 +25,7 @@ _executor = ThreadPoolExecutor(max_workers=4)
 
 # 腾讯云 GLM-5 API 配置（从环境变量读取）
 TENCENT_API_KEY = os.environ.get("TENCENT_API_KEY", "")
-TENCENT_API_URL = os.environ.get("TENCENT_API_URL", "https://api.lkeap.cloud.tencent.com/coding/anthropic")
+TENCENT_API_URL = os.environ.get("TENCENT_API_URL", "https://api.lkeap.cloud.tencent.com/coding/anthropic/v1/messages")
 TENCENT_MODEL = os.environ.get("TENCENT_MODEL", "glm-5")
 
 if not TENCENT_API_KEY:
