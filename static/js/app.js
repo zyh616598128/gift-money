@@ -107,7 +107,7 @@ function showTabMobile(name) {
   document.getElementById('tab-' + name).style.display = 'block';
   event.target.closest('.mobile-nav-item').classList.add('active');
   if (name === 'summary') loadSummary();
-  if (name === 'people') loadPersonList();
+  if (name === 'people') loadPersonList(1);
   if (name === 'list') loadCategories();
 }
 
@@ -892,17 +892,22 @@ document.addEventListener('click', (e) => {
 });
 
 /* ── Person List ── */
-async function loadPersonList(name) {
-  let url = API + '/api/people';
+let personPageSize = 20;
+let personCurrentPage = 1;
+
+async function loadPersonList(page = 1, name = null) {
+  personCurrentPage = page;
+  const params = new URLSearchParams({ page: page, size: personPageSize });
   if (name) {
-    url += '?name=' + encodeURIComponent(name);
+    params.set('name', name);
   }
-  const res = await api(url);
+  const res = await api(API + '/api/people?' + params);
   if (!res) return;
-  const people = await res.json();
+  const data = await res.json();
+  const people = data.data || [];
 
   if (isMobile) {
-    // 移动端：卡片列表，复用统计页样式
+    // 移动端：卡片列表
     const container = document.getElementById('person-card-container');
     container.style.display = 'block';
     container.innerHTML = '';
@@ -926,6 +931,7 @@ async function loadPersonList(name) {
             )
           ),
           el('div', { className: 'mobile-tx-card-meta' },
+            el('span', {}, `📍 地址: ${p.address||'-'}`),
             el('span', {}, `📥 收礼: ${fmt(tInc)}`),
             el('span', {}, `📤 送礼: ${fmt(tExp)}`),
             el('span', {}, `📊 笔数: ${p.cnt || 0}`)
@@ -938,6 +944,15 @@ async function loadPersonList(name) {
         );
         container.appendChild(card);
       });
+    }
+
+    // 移动端分页
+    const paginationContainer = document.getElementById('person-pagination-mobile');
+    if (paginationContainer) {
+      paginationContainer.innerHTML = `
+        <button class="page-btn" onclick="loadPersonList(${page - 1}, ${name ? `'${name}'` : 'null'})" ${page <= 1 ? 'disabled' : ''}>上一页</button>
+        <span style="line-height:36px;color:var(--text-secondary);font-size:0.88rem;">第 ${page} 页 / 共 ${Math.ceil((data.total||0) / personPageSize)} 页</span>
+        <button class="page-btn" onclick="loadPersonList(${page + 1}, ${name ? `'${name}'` : 'null'})" ${people.length < personPageSize ? 'disabled' : ''}>下一页</button>`;
     }
   } else {
     // Web端：表格
@@ -962,12 +977,21 @@ async function loadPersonList(name) {
            </td></tr>`;
         }).join('')
       : '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:32px;">暂无人员</td></tr>';
+
+    // Web端分页
+    const paginationEl = document.getElementById('person-pagination');
+    if (paginationEl) {
+      paginationEl.innerHTML = `
+        <button class="page-btn" onclick="loadPersonList(${page - 1}, ${name ? `'${name}'` : 'null'})" ${page <= 1 ? 'disabled' : ''}>上一页</button>
+        <span style="line-height:36px;color:var(--text-secondary);font-size:0.88rem;">第 ${page} 页 / 共 ${Math.ceil((data.total||0) / personPageSize)} 页 (${data.total||0}条)</span>
+        <button class="page-btn" onclick="loadPersonList(${page + 1}, ${name ? `'${name}'` : 'null'})" ${people.length < personPageSize ? 'disabled' : ''}>下一页</button>`;
+    }
   }
 }
 
 function searchPeople() {
   const name = document.getElementById('person-search').value.trim();
-  loadPersonList(name);
+  loadPersonList(1, name);
 }
 
 /* ── Excel Export ── */
@@ -1595,7 +1619,7 @@ function showTab(name) {
   document.getElementById('tab-' + name).style.display = 'block';
   event.target.classList.add('active');
   if (name === 'summary') loadSummary();
-  if (name === 'people') loadPersonList();
+  if (name === 'people') loadPersonList(1);
   if (name === 'list') loadCategories();
 }
 
@@ -1721,7 +1745,7 @@ async function submitAddPerson() {
       callback({ id: data.id || _editingPersonId, name });
     }
     // 刷新人员列表
-    loadPersonList();
+    loadPersonList(1);
   } else {
     const err = await res.json().catch(() => ({}));
     showToast(err.detail || '操作失败', 'error');
@@ -1796,7 +1820,7 @@ async function deletePerson(id) {
   if (res.ok) {
     showToast('人员删除成功');
     document.getElementById('delete-person-modal').classList.remove('show');
-    loadPersonList();
+    loadPersonList(1);
   } else {
     const err = await res.json().catch(() => ({}));
     showToast(err.detail || '删除失败', 'error');
@@ -2320,7 +2344,7 @@ async function confirmImport() {
         cancelImport();
         loadTransactions(1);
         loadSummary();
-        loadPersonList();
+        loadPersonList(1);
       }
     } else {
       hideImportLoading();

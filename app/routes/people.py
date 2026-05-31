@@ -91,9 +91,11 @@ def create_person(person: PersonCreate, request: Request):
 def list_people_summary(
     name: Optional[str] = Query(None),
     sort: str = Query("name"),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
     request: Request = None,
 ):
-    """获取人员列表"""
+    """获取人员列表（支持分页）"""
     user = get_current_user(request)
     user_id = user["user_id"]
     conn = get_connection()
@@ -108,10 +110,17 @@ def list_people_summary(
                      "balance": "balance DESC", "cnt": "cnt DESC"}
         order = sort_map.get(sort, "p.name")
 
-        # 注意：参数顺序必须与 SQL 中 ? 的顺序一致
-        # LEFT JOIN ... t.user_id = ?  -> user_id
-        # WHERE p.user_id = ?          -> user_id
-        # WHERE p.name LIKE ?          -> like_param (如果有)
+        # 获取总数
+        count_row = conn.execute(f"""
+            SELECT COUNT(DISTINCT p.id) as total
+            FROM people p
+            LEFT JOIN transactions t ON t.person_id = p.id AND t.user_id = ?
+            WHERE {where}
+        """, [user_id] + params).fetchone()
+        total = count_row["total"] if count_row else 0
+
+        # 分页查询
+        offset = (page - 1) * size
         rows = conn.execute(f"""
             SELECT p.id, p.name, p.phone, p.address, p.note,
                    COALESCE(SUM(CASE WHEN t.direction='income' THEN t.amount ELSE 0 END), 0) as total_income,
@@ -123,9 +132,15 @@ def list_people_summary(
             WHERE {where}
             GROUP BY p.id
             ORDER BY {order}
-        """, [user_id] + params).fetchall()
+            LIMIT ? OFFSET ?
+        """, [user_id] + params + [size, offset]).fetchall()
 
-        return [dict(r) for r in rows]
+        return {
+            "data": [dict(r) for r in rows],
+            "total": total,
+            "page": page,
+            "size": size
+        }
     finally:
         conn.close()
 
