@@ -219,12 +219,12 @@ async function loadSummary() {
     const total_income = Number(r.total_income) || 0;
     const total_expense = Number(r.total_expense) || 0;
     const balance = Number(r.balance) || 0;
-    return `<tr><td>${r.name}</td><td class="amount-income">${fmt(total_income)}</td>
+    return `<tr><td>${r.name}</td><td style="max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.address||'').replace(/"/g,'&quot;')}">${r.address||'-'}</td><td class="amount-income">${fmt(total_income)}</td>
          <td class="amount-expense">${fmt(total_expense)}</td>
          <td class="${balance>=0?'amount-income':'amount-expense'}">${fmt(balance)}</td>
          <td>${r.cnt}</td>
          <td><button class="btn btn-sm btn-primary" onclick="viewPersonDetail(${r.id})">查看</button></td></tr>`;
-  }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:32px;">暂无数据</td></tr>';
+  }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:32px;">暂无数据</td></tr>';
 
   // Mobile person stats cards
   if (isMobile) {
@@ -246,6 +246,7 @@ async function loadSummary() {
             </div>
           </div>
           <div class="mobile-tx-card-meta">
+            <span>📍 地址: ${r.address||'-'}</span>
             <span>📥 收礼: ${fmt(total_income)}</span>
             <span>📤 送礼: ${fmt(total_expense)}</span>
             <span>📊 笔数: ${r.cnt}</span>
