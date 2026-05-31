@@ -514,8 +514,14 @@ async function loadCategories() {
   filterSel.value = curVal;
 
   document.getElementById('category-list').innerHTML = cats.length
-    ? cats.map(c => `<span class="category-item"><span class="tag ${tagClass(c.name)}">${c.name}</span></span>`).join('')
+    ? cats.map(c => `<span class="category-item" onclick="filterByCategory('${c.name}')" style="cursor:pointer;" title="点击查看${c.name}相关记录"><span class="tag ${tagClass(c.name)}">${c.name}</span></span>`).join('')
     : '<div class="empty-state"><p>暂无分类</p></div>';
+}
+
+function filterByCategory(category) {
+  showTab('list');
+  document.getElementById('filter-category').value = category;
+  loadTransactions(1);
 }
 
 async function addCategory(e) {
