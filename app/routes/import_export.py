@@ -863,6 +863,7 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
 
         if response.status_code != 200:
             error_text = response.text
+            print(f"DeepSeek API Error: status={response.status_code}, response={error_text}")
             raise Exception(f"API调用失败({response.status_code}): {error_text}")
 
         result = response.json()
