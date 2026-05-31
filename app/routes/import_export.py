@@ -23,12 +23,13 @@ router = APIRouter(prefix="/api", tags=["import-export"])
 # 线程池用于并行处理数据
 _executor = ThreadPoolExecutor(max_workers=4)
 
-# DeepSeek API 配置（从环境变量读取）
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
-DEEPSEEK_API_URL = "https://api.deepseek.com/v1/chat/completions"
+# 腾讯云 GLM-5 API 配置（从环境变量读取）
+TENCENT_API_KEY = os.environ.get("TENCENT_API_KEY", "")
+TENCENT_API_URL = os.environ.get("TENCENT_API_URL", "https://api.lkeap.cloud.tencent.com/coding/anthropic")
+TENCENT_MODEL = os.environ.get("TENCENT_MODEL", "glm-5")
 
-if not DEEPSEEK_API_KEY:
-    print("WARNING: DEEPSEEK_API_KEY environment variable not set. Photo recognition will not work.")
+if not TENCENT_API_KEY:
+    print("WARNING: TENCENT_API_KEY environment variable not set. Photo recognition will not work.")
 
 
 @router.get("/categories/list")
@@ -825,14 +826,13 @@ def _build_photo_prompt(date: str = None, category: str = None, note: str = None
 
 
 async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
-    """调用DeepSeek Vision API识别图片
+    """调用腾讯云 GLM-5 Vision API识别图片
 
-    DeepSeek V4正确格式：
-    - image_url: {"url": "data:image/jpeg;base64,<base64>"}
-    - 图片需要压缩到约50KB以下才能正确识别
+    腾讯云使用Anthropic兼容格式：
+    - content: [{"type": "text", "text": "..."}, {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,..."}}]
     """
 
-    # DeepSeek V4 只支持单张图片，取第一张
+    # 只支持单张图片，取第一张
     if not images:
         raise Exception("没有图片数据")
 
@@ -847,7 +847,7 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
     print(f"Image compressed: {len(img_base64)} -> {len(compressed_b64)} chars")
 
     # 调用API
-    result = await loop.run_in_executor(_executor, _sync_call_deepseek_httpx, compressed_b64, prompt)
+    result = await loop.run_in_executor(_executor, _sync_call_tencent_api, compressed_b64, prompt)
     return result
 
 
@@ -892,37 +892,37 @@ def _compress_image(img_base64: str, max_size: int = 800, quality: int = 50, max
     return result_b64
 
 
-def _sync_call_deepseek_httpx(img_base64: str, prompt: str) -> List[dict]:
-    """同步调用DeepSeek API（在线程池中执行）"""
+def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
+    """同步调用腾讯云GLM-5 API（在线程池中执行）"""
 
-    # DeepSeek V4 正确格式：image_url对象带data URL
+    # 腾讯云Anthropic兼容格式：content是数组
     payload = {
-        "model": "deepseek-v4-pro",
+        "model": TENCENT_MODEL,
         "messages": [
             {
                 "role": "user",
-                "content": prompt,
-                "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}  # 正确格式！
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}}
+                ]
             }
         ],
-        "max_tokens": 4096,
-        "temperature": 0.1
+        "max_tokens": 4096
     }
 
     # 调试：打印payload结构
     debug_payload = {**payload}
-    debug_payload["messages"] = [{**payload["messages"][0]}]
-    debug_payload["messages"][0]["image_url"] = {"url": f"<{len(img_base64)} chars base64>"}
+    debug_payload["messages"] = [{"role": "user", "content": [{"type": "text", "text": prompt[:50]}, {"type": "image_url", "image_url": {"url": f"<{len(img_base64)} chars>"}}]}]
     print(f"Sending payload: {json.dumps(debug_payload, ensure_ascii=False)}")
 
     headers = {
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Authorization": f"Bearer {TENCENT_API_KEY}",
         "Content-Type": "application/json"
     }
 
     # 使用httpx同步客户端
     response = httpx.post(
-        DEEPSEEK_API_URL,
+        TENCENT_API_URL,
         json=payload,
         headers=headers,
         timeout=120.0
@@ -930,15 +930,15 @@ def _sync_call_deepseek_httpx(img_base64: str, prompt: str) -> List[dict]:
 
     if response.status_code != 200:
         error_text = response.text
-        print(f"DeepSeek API Error: status={response.status_code}, response={error_text}")
+        print(f"Tencent API Error: status={response.status_code}, response={error_text}")
         raise Exception(f"API调用失败({response.status_code}): {error_text}")
 
     result = response.json()
-    print(f"DeepSeek API Response: {json.dumps(result, ensure_ascii=False)[:2000]}")
+    print(f"Tencent API Response: {json.dumps(result, ensure_ascii=False)[:2000]}")
 
     # 解析返回内容
     try:
-        message_content = result["choices"][0]["message"]["content"]
+        message_content = result["content"][0]["text"] if "content" in result else result["choices"][0]["message"]["content"]
         print(f"Message content: {message_content[:1000]}")
 
         # 尝试提取JSON
