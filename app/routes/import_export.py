@@ -819,34 +819,35 @@ def _build_photo_prompt(date: str = None, category: str = None, note: str = None
 
 
 async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
-    """调用DeepSeek Vision API识别图片"""
+    """调用DeepSeek Vision API识别图片
 
-    # 构建消息内容
-    content = [{"type": "text", "text": prompt}]
+    DeepSeek V4格式与OpenAI不同：
+    - 图片数据作为独立字段 image_data 放在message对象中
+    - 不是content数组嵌套
+    - 只支持单张图片，多张图片需要多次调用
+    """
 
-    # 添加所有图片
-    for img_base64 in images:
-        # 确保是纯base64，不带data:image前缀
-        if "," in img_base64:
-            img_base64 = img_base64.split(",")[1]
+    # DeepSeek V4 只支持单张图片，取第一张
+    if not images:
+        raise Exception("没有图片数据")
 
-        content.append({
-            "type": "image_url",
-            "image_url": {
-                "url": f"data:image/jpeg;base64,{img_base64}"
-            }
-        })
+    img_base64 = images[0]
+    # 确保是纯base64，不带data:image前缀
+    if "," in img_base64:
+        img_base64 = img_base64.split(",")[1]
 
+    # DeepSeek V4 格式：image_data 作为message的独立字段
     payload = {
-        "model": "deepseek-v4-flash",  # DeepSeek 视觉模型
+        "model": "deepseek-v4-flash",
         "messages": [
             {
                 "role": "user",
-                "content": content
+                "content": prompt,
+                "image_data": img_base64  # 纯base64字符串
             }
         ],
         "max_tokens": 4096,
-        "temperature": 0.1  # 低温度提高一致性
+        "temperature": 0.1
     }
 
     headers = {
