@@ -929,8 +929,8 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
 
 
 def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
-    """同步调用腾讯云API（Anthropic兼容格式）"""
-    # Anthropic 格式
+    """同步调用腾讯云API（OpenAI兼容格式）"""
+    # OpenAI 兼容格式
     payload = {
         "model": TENCENT_MODEL,
         "messages": [
@@ -967,13 +967,10 @@ def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
     result = response.json()
     print(f"Tencent API Response: {json.dumps(result, ensure_ascii=False)[:2000]}")
 
-    # 解析返回内容（Anthropic格式）
+    # 解析返回内容（OpenAI格式）
     try:
-        content_blocks = result.get("content", [])
-        message_content = ""
-        for block in content_blocks:
-            if block.get("type") == "text":
-                message_content += block.get("text", "")
+        message = result["choices"][0]["message"]
+        message_content = message.get("content", "") or message.get("reasoning_content", "")
 
         print(f"Message content: {message_content[:1000]}")
 
