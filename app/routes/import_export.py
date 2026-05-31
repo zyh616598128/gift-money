@@ -838,7 +838,7 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
         })
 
     payload = {
-        "model": "deepseek-chat",
+        "model": "deepseek-vision",  # DeepSeek 视觉模型
         "messages": [
             {
                 "role": "user",
