@@ -842,15 +842,14 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
     if "," in img_base64:
         img_base64 = img_base64.split(",")[1]
 
-    # 使用线程池执行同步请求
+    # 使用线程池执行同步请求（httpx同步客户端）
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(_executor, _sync_call_deepseek, img_base64, prompt)
+    result = await loop.run_in_executor(_executor, _sync_call_deepseek_httpx, img_base64, prompt)
     return result
 
 
-def _sync_call_deepseek(img_base64: str, prompt: str) -> List[dict]:
-    """同步调用DeepSeek API（在线程池中执行）"""
-    import requests
+def _sync_call_deepseek_httpx(img_base64: str, prompt: str) -> List[dict]:
+    """同步调用DeepSeek API（在线程池中执行，使用httpx同步客户端）"""
 
     # DeepSeek V4 格式：image_data 作为message的独立字段
     payload = {
@@ -877,11 +876,12 @@ def _sync_call_deepseek(img_base64: str, prompt: str) -> List[dict]:
         "Content-Type": "application/json"
     }
 
-    response = requests.post(
+    # 使用httpx同步客户端
+    response = httpx.post(
         DEEPSEEK_API_URL,
         json=payload,
         headers=headers,
-        timeout=120
+        timeout=120.0
     )
 
     if response.status_code != 200:
