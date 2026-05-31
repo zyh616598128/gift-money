@@ -827,10 +827,8 @@ def _build_photo_prompt(date: str = None, category: str = None, note: str = None
 async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
     """调用DeepSeek Vision API识别图片
 
-    DeepSeek V4格式与OpenAI不同：
-    - 图片数据作为独立字段 image_data 放在message对象中
-    - 不是content数组嵌套
-    - 只支持单张图片，多张图片需要多次调用
+    DeepSeek V4正确格式：
+    - image_url: {"url": "data:image/jpeg;base64,<base64>"}
     """
 
     # DeepSeek V4 只支持单张图片，取第一张
@@ -842,33 +840,33 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
     if "," in img_base64:
         img_base64 = img_base64.split(",")[1]
 
-    # 使用线程池执行同步请求（httpx同步客户端）
+    # 使用线程池执行同步请求
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(_executor, _sync_call_deepseek_httpx, img_base64, prompt)
     return result
 
 
 def _sync_call_deepseek_httpx(img_base64: str, prompt: str) -> List[dict]:
-    """同步调用DeepSeek API（在线程池中执行，使用httpx同步客户端）"""
+    """同步调用DeepSeek API（在线程池中执行）"""
 
-    # DeepSeek V4 格式：image_data 作为message的独立字段
+    # DeepSeek V4 正确格式：image_url对象带data URL
     payload = {
-        "model": "deepseek-v4-pro",  # pro版本支持视觉
+        "model": "deepseek-v4-pro",
         "messages": [
             {
                 "role": "user",
                 "content": prompt,
-                "image_data": img_base64  # 纯base64字符串
+                "image_url": {"url": f"data:image/jpeg;base64,{img_base64}"}  # 正确格式！
             }
         ],
         "max_tokens": 4096,
         "temperature": 0.1
     }
 
-    # 调试：打印payload结构（不含完整图片数据）
+    # 调试：打印payload结构
     debug_payload = {**payload}
     debug_payload["messages"] = [{**payload["messages"][0]}]
-    debug_payload["messages"][0]["image_data"] = f"<{len(img_base64)} chars>"
+    debug_payload["messages"][0]["image_url"] = {"url": f"<{len(img_base64)} chars base64>"}
     print(f"Sending payload: {json.dumps(debug_payload, ensure_ascii=False)}")
 
     headers = {
@@ -882,6 +880,7 @@ def _sync_call_deepseek_httpx(img_base64: str, prompt: str) -> List[dict]:
         json=payload,
         headers=headers,
         timeout=120.0
+    )
     )
 
     if response.status_code != 200:
