@@ -943,7 +943,8 @@ def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
             }
         ],
         "max_tokens": 4096,
-        "temperature": 1
+        "temperature": 1,
+        "enable_thinking": False
     }
 
     print(f"Sending to Tencent API: model={TENCENT_MODEL}, url={TENCENT_API_URL}")
