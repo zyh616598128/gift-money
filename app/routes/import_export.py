@@ -12,6 +12,7 @@ import os
 import json
 import httpx
 import base64
+import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from app.database import get_connection
 from app.constants import CATEGORIES
