@@ -1275,6 +1275,16 @@ function cancelImport() {
   document.getElementById('excel-file-input').value = '';
   document.getElementById('excel-file-name').textContent = '';
   pendingExcelData = null;
+
+  // 清空照片识别相关数据
+  _photoResults = [];
+  _currentPhotoIndex = 0;
+  _totalPhotos = 0;
+  _recognizingIndex = 0;
+
+  // 移除图片切换器
+  const switcher = document.getElementById('photo-switcher');
+  if (switcher) switcher.remove();
 }
 
 function toggleExcelSelectAll() {
@@ -1793,7 +1803,7 @@ async function submitPhotoRecognition() {
               hideImportLoading();
               _recognizingIndex = _totalPhotos;
               updatePhotoRecognitionUI();
-              showToast(`识别完成！共 ${_totalPhotos} 张图片，${_photoResults.reduce((a, b) => a + b.data.length, 0)} 条记录`);
+              showToast(`识别完成！共 ${_totalPhotos} 张图片，${_photoResults.reduce((a, b) => a + (b?.data?.length || 0), 0)} 条记录`);
             } else if (data.batch !== undefined) {
               // 单张图片识别完成
               _recognizingIndex = data.batch;
@@ -1805,14 +1815,15 @@ async function submitPhotoRecognition() {
                 accumulated: data.accumulated || {}
               };
 
-              // 更新UI
-              updatePhotoRecognitionUI();
-
-              // 如果是第一张，自动显示
+              // 第一张识别完就解除锁定
               if (data.batch === 1) {
+                hideImportLoading();
                 _currentPhotoIndex = 0;
                 showPhotoResult(0);
               }
+
+              // 更新UI
+              updatePhotoRecognitionUI();
             }
           } catch (e) {
             console.error('解析SSE数据失败:', e);
@@ -2017,9 +2028,10 @@ async function confirmImport() {
 
       if (nextIndex >= 0) {
         showPhotoResult(nextIndex);
+        renderPhotoSwitcher();
       } else {
-        // 全部导入完成
-        document.getElementById('excel-preview-area').style.display = 'none';
+        // 全部导入完成，清空预览
+        cancelImport();
         loadTransactions(1);
         loadSummary();
         loadPersonList();
