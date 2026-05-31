@@ -1669,7 +1669,15 @@ async function submitPhotoRecognition() {
   btn.disabled = true;
 
   const totalImages = images.length;
-  showImportLoading(`正在识别照片 (0/${totalImages})，请稍候...`);
+  const startTime = Date.now();
+
+  // 更新进度显示函数
+  function updateProgress(status) {
+    const elapsed = Math.round((Date.now() - startTime) / 1000);
+    showImportLoading(`${status}（已用时 ${elapsed} 秒）`);
+  }
+
+  updateProgress('准备识别照片...');
 
   // 初始化预览区
   pendingExcelData = [];
@@ -1681,6 +1689,8 @@ async function submitPhotoRecognition() {
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = 'Bearer ' + token;
 
+    updateProgress('发送图片到服务器...');
+
     const response = await fetch(API + '/api/import/photo-preview', {
       method: 'POST',
       headers,
@@ -1691,6 +1701,8 @@ async function submitPhotoRecognition() {
       const err = await response.json().catch(() => ({}));
       throw new Error(err.detail || '识别失败');
     }
+
+    updateProgress('AI正在识别图片内容...');
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -1712,10 +1724,12 @@ async function submitPhotoRecognition() {
             if (data.done) {
               // 识别完成
               hideImportLoading();
-              showToast(`识别完成！共 ${data.total} 条记录`);
+              const totalTime = Math.round((Date.now() - startTime) / 1000);
+              showToast(`识别完成！共 ${data.total} 条记录，耗时 ${totalTime} 秒`);
             } else if (data.data && data.data.length > 0) {
-              // 更新加载提示
-              showImportLoading(`正在识别照片 (${data.batch}/${data.total_batches})，已识别 ${data.accumulated.total} 条...`);
+              // 更新进度
+              const elapsed = Math.round((Date.now() - startTime) / 1000);
+              updateProgress(`正在识别照片 (${data.batch}/${data.total_batches})，已识别 ${data.accumulated.total} 条`);
 
               // 追加数据到预览
               pendingExcelData.push(...data.data);
@@ -1727,6 +1741,9 @@ async function submitPhotoRecognition() {
 
               // 渲染预览（追加模式）
               renderExcelPreview(pendingExcelData);
+            } else if (data.status) {
+              // 显示状态更新
+              updateProgress(data.status);
             }
           } catch (e) {
             console.error('解析SSE数据失败:', e);

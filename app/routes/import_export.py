@@ -691,13 +691,25 @@ async def preview_photo(request: PhotoPreviewRequest, req: Request):
         total_new_persons = 0
         total_needs_confirm = 0
 
+        # 发送开始状态
+        yield f"data: {json.dumps({'status': '开始处理图片...'}, ensure_ascii=False)}\n\n"
+
         for img_idx, img_base64 in enumerate(request.images):
             try:
+                # 发送处理状态
+                yield f"data: {json.dumps({'status': f'处理第 {img_idx + 1}/{len(request.images)} 张图片'}, ensure_ascii=False)}\n\n"
+
                 # 构建提示词
                 prompt = _build_photo_prompt(request.date, request.category, request.note, request.user_prompt)
 
+                # 发送AI识别状态
+                yield f"data: {json.dumps({'status': f'AI正在识别第 {img_idx + 1} 张图片...'}, ensure_ascii=False)}\n\n"
+
                 # 识别单张图片
                 recognized_data = await _call_deepseek_vision([img_base64], prompt)
+
+                # 发送解析状态
+                yield f"data: {json.dumps({'status': f'解析第 {img_idx + 1} 张图片结果...'}, ensure_ascii=False)}\n\n"
 
                 if not recognized_data:
                     # 返回空批次
@@ -1015,10 +1027,22 @@ def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
         raise Exception(f"AI返回格式异常: {str(e)}")
 
 
-def _compress_image(img_base64: str, max_size: int = 400, quality: int = 30, max_file_size: int = 20000) -> str:
-    """压缩图片到指定大小以下（更小更快）"""
+def _compress_image(img_base64: str, max_file_size: int = 13333333) -> str:
+    """压缩图片到指定大小以下（10M以内不压缩）
+
+    Args:
+        img_base64: base64编码的图片
+        max_file_size: 最大文件大小（base64字符数），默认约10MB
+    """
+    # 10M以内不压缩，直接返回
+    if len(img_base64) <= max_file_size:
+        print(f"图片大小 {len(img_base64)} chars，无需压缩")
+        return img_base64
+
     from PIL import Image
     import io
+
+    print(f"图片大小 {len(img_base64)} chars，需要压缩")
 
     # 解码图片
     img_bytes = base64.b64decode(img_base64)
@@ -1028,17 +1052,22 @@ def _compress_image(img_base64: str, max_size: int = 400, quality: int = 30, max
     if img.mode in ('RGBA', 'P'):
         img = img.convert('RGB')
 
+    # 逐步压缩
+    max_size = 800
+    quality = 50
+
     # 缩小尺寸
     if img.width > max_size or img.height > max_size:
         ratio = min(max_size / img.width, max_size / img.height)
         img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.LANCZOS)
 
     # 压缩并检查大小
-    for q in [quality, 50, 40, 30, 20]:
+    for q in [quality, 40, 30, 20]:
         buf = io.BytesIO()
         img.save(buf, format='JPEG', quality=q)
         result_b64 = base64.b64encode(buf.getvalue()).decode('utf-8')
         if len(result_b64) <= max_file_size:
+            print(f"压缩完成: {len(img_base64)} -> {len(result_b64)} chars")
             return result_b64
 
     # 如果还是太大，继续缩小
