@@ -311,24 +311,28 @@ async function loadTransactions(page) {
     // 移动端：卡片列表
     const container = document.getElementById('tx-card-container');
     container.style.display = 'block';
-    document.querySelector('.table-wrapper.desktop-only').style.display = 'none';
     container.innerHTML = '';
 
     if ((data.data || []).length === 0) {
       container.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>暂无记录</p></div>';
     } else {
-      const cardList = el('div', { className: 'mobile-card-list' });
       (data.data || []).forEach(r => {
         const amt = Number(r.amount) || 0;
         const card = el('div', { className: 'mobile-tx-card' },
           el('div', { className: 'mobile-tx-card-header' },
-            el('div', { className: 'mobile-tx-card-name' }, r.name),
-            el('div', { className: `mobile-tx-card-amount ${r.direction==='income'?'amount-income':'amount-expense'}` },
-              (r.direction==='income'?'+':'-') + fmt(amt))
+            el('div', {},
+              el('div', { style: { fontSize: '12px', color: 'var(--text-muted)' } }, '姓名'),
+              el('div', { className: 'mobile-tx-card-name' }, r.name)
+            ),
+            el('div', { style: { textAlign: 'right' } },
+              el('div', { style: { fontSize: '12px', color: 'var(--text-muted)' } }, '金额'),
+              el('div', { className: `mobile-tx-card-amount ${r.direction==='income'?'amount-income':'amount-expense'}` },
+                (r.direction==='income'?'+':'-') + fmt(amt))
+            )
           ),
           el('div', { className: 'mobile-tx-card-meta' },
-            el('span', {}, `📅 ${r.date}`),
-            el('span', {}, `🏷️ ${r.category}`),
+            el('span', {}, `📅 日期: ${r.date}`),
+            el('span', {}, `🏷️ 分类: ${r.category}`),
             el('span', {}, r.direction==='income'?'📥 收礼':'📤 送礼')
           ),
           el('div', { className: 'mobile-tx-card-actions' },
@@ -336,14 +340,12 @@ async function loadTransactions(page) {
             el('button', { className: 'btn btn-danger', onclick: () => deleteTransaction(r.id) }, '删除')
           )
         );
-        cardList.appendChild(card);
+        container.appendChild(card);
       });
-      container.appendChild(cardList);
     }
   } else {
     // Web端：表格
     document.getElementById('tx-card-container').style.display = 'none';
-    document.querySelector('.table-wrapper.desktop-only').style.display = 'block';
     const tbody = document.getElementById('tx-table-body');
     tbody.innerHTML = (data.data || []).map(r => {
       const amt = Number(r.amount) || 0;
@@ -682,6 +684,7 @@ async function loadPersonList(name) {
          <td class="${bal>=0?'amount-income':'amount-expense'}">${fmt(bal)}</td>
          <td>${p.cnt || 0}</td>
          <td>
+           <button class="btn btn-sm btn-primary" onclick="viewPersonDetail(${p.id})">记录</button>
            <button class="btn btn-sm btn-secondary" onclick="editPerson(${p.id})">编辑</button>
            <button class="btn btn-sm btn-danger" onclick="confirmDeletePerson(${p.id}, '${p.name}', ${p.cnt || 0})">删除</button>
          </td></tr>`;
