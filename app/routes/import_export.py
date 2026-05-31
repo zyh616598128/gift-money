@@ -936,6 +936,9 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
 
 def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
     """同步调用阿里云百炼 API（OpenAI兼容格式）"""
+    import time
+    api_start = time.time()
+
     # OpenAI 兼容格式
     payload = {
         "model": TENCENT_MODEL,
@@ -954,7 +957,7 @@ def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
         "extra_body": {"enable_thinking": False}
     }
 
-    print(f"Sending to API: model={TENCENT_MODEL}, url={TENCENT_API_URL}")
+    print(f"[API] 开始调用: model={TENCENT_MODEL}, 图片大小={len(img_base64)} chars, 时间={api_start}")
 
     # OpenAI 兼容认证头
     headers = {
@@ -969,13 +972,17 @@ def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
         timeout=300.0
     )
 
+    api_end = time.time()
+    api_duration = api_end - api_start
+    print(f"[API] 响应收到: status={response.status_code}, 耗时={api_duration:.2f}秒, 时间={api_end}")
+
     if response.status_code != 200:
         error_text = response.text
-        print(f"Tencent API Error: status={response.status_code}, response={error_text}")
+        print(f"API Error: status={response.status_code}, response={error_text}")
         raise Exception(f"API调用失败({response.status_code}): {error_text}")
 
     result = response.json()
-    print(f"Tencent API Response: {json.dumps(result, ensure_ascii=False)[:2000]}")
+    print(f"[API] 响应内容: {json.dumps(result, ensure_ascii=False)[:500]}")
 
     # 解析返回内容（OpenAI格式）
     try:
