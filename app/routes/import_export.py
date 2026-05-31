@@ -929,8 +929,8 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
 
 
 def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
-    """同步调用腾讯云 Coding Anthropic API"""
-    # Anthropic 格式
+    """同步调用腾讯云 Kimi API（OpenAI兼容格式）"""
+    # OpenAI 兼容格式
     payload = {
         "model": TENCENT_MODEL,
         "messages": [
@@ -947,11 +947,10 @@ def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
 
     print(f"Sending to Tencent API: model={TENCENT_MODEL}, url={TENCENT_API_URL}")
 
-    # Anthropic API 认证头
+    # OpenAI 兼容认证头
     headers = {
         "Content-Type": "application/json",
-        "x-api-key": TENCENT_API_KEY,
-        "anthropic-version": "2023-06-01"
+        "Authorization": f"Bearer {TENCENT_API_KEY}"
     }
 
     response = httpx.post(
