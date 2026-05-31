@@ -661,9 +661,94 @@ def _resolve_or_create_person(conn, user_id: int, name: str, row: dict) -> Optio
 
 # ==================== 照片识别导入 ====================
 
+import uuid
+from datetime import datetime
+
+# 图片上传目录
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static", "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+@router.post("/import/photo-upload")
+async def upload_photo(file: UploadFile = File(...), request: Request = None):
+    """上传单张图片，返回可访问的URL"""
+    # 验证文件类型
+    if not file.content_type or not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="只支持图片文件")
+
+    # 生成唯一文件名
+    ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+    filename = f"{datetime.now().strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}.{ext}"
+    filepath = os.path.join(UPLOAD_DIR, filename)
+
+    # 读取并保存图片（同时压缩）
+    content = await file.read()
+
+    # 压缩图片到200KB以下
+    compressed = _compress_image_bytes(content, max_size=200*1024)
+
+    with open(filepath, "wb") as f:
+        f.write(compressed)
+
+    # 返回可访问的URL（使用请求的host）
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host", "")
+    scheme = request.headers.get("x-forwarded-proto", "https")
+    base_url = f"{scheme}://{host}" if host else ""
+    url = f"{base_url}/static/uploads/{filename}"
+
+    print(f"[UPLOAD] 文件已保存: {filename}, URL: {url}")
+    return {"url": url, "filename": filename}
+
+
+def _compress_image_bytes(img_bytes: bytes, max_size: int = 200*1024) -> bytes:
+    """压缩图片字节数据到指定大小以下"""
+    from PIL import Image
+    import io
+
+    # 如果已经小于限制，直接返回
+    if len(img_bytes) <= max_size:
+        return img_bytes
+
+    img = Image.open(io.BytesIO(img_bytes))
+
+    # 转换为RGB
+    if img.mode in ('RGBA', 'P'):
+        img = img.convert('RGB')
+
+    # 逐步压缩
+    quality = 80
+    max_dimension = 1280
+
+    # 先缩小尺寸
+    if img.width > max_dimension or img.height > max_dimension:
+        ratio = min(max_dimension / img.width, max_dimension / img.height)
+        img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.LANCZOS)
+
+    for q in [quality, 60, 40, 30, 20]:
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG', quality=q)
+        if buf.tell() <= max_size:
+            return buf.getvalue()
+
+    # 如果还是太大，继续缩小
+    while max_dimension > 200:
+        max_dimension = int(max_dimension * 0.8)
+        img = Image.open(io.BytesIO(img_bytes))
+        if img.mode in ('RGBA', 'P'):
+            img = img.convert('RGB')
+        ratio = min(max_dimension / img.width, max_dimension / img.height)
+        img = img.resize((int(img.width * ratio), int(img.height * ratio)), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG', quality=30)
+        if buf.tell() <= max_size:
+            return buf.getvalue()
+
+    return buf.getvalue()
+
+
 class PhotoPreviewRequest(BaseModel):
     """照片识别请求"""
-    images: List[str]  # Base64编码的图片列表
+    image_urls: List[str]  # 图片URL列表
     date: Optional[str] = None  # 用户提供的日期
     category: Optional[str] = None  # 用户提供的分类
     note: Optional[str] = None  # 用户提供的备注
@@ -675,14 +760,15 @@ async def preview_photo(request: PhotoPreviewRequest, req: Request):
     """
     识别礼簿照片，流式返回结构化预览数据。
     每识别完一张照片就返回一批数据。
+    使用图片URL调用API，比base64更快。
     """
     user = get_current_user(req)
     user_id = user["user_id"]
 
-    if not request.images:
+    if not request.image_urls:
         raise HTTPException(status_code=400, detail="请至少上传一张照片")
 
-    print(f"Received {len(request.images)} images for streaming recognition")
+    print(f"Received {len(request.image_urls)} image URLs for streaming recognition")
 
     async def generate():
         """流式生成识别结果"""
@@ -691,29 +777,22 @@ async def preview_photo(request: PhotoPreviewRequest, req: Request):
         total_new_persons = 0
         total_needs_confirm = 0
 
-        # 立即发送开始状态（确保客户端知道已连接）
-        yield f"data: {json.dumps({'status': '已收到图片，开始处理...'}, ensure_ascii=False)}\n\n"
+        # 立即发送开始状态
+        yield f"data: {json.dumps({'status': '已收到图片，开始识别...'}, ensure_ascii=False)}\n\n"
 
-        for img_idx, img_base64 in enumerate(request.images):
+        for img_idx, img_url in enumerate(request.image_urls):
             try:
                 # 发送处理状态
-                yield f"data: {json.dumps({'status': f'处理第 {img_idx + 1}/{len(request.images)} 张图片'}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'status': f'识别第 {img_idx + 1}/{len(request.image_urls)} 张图片...'}, ensure_ascii=False)}\n\n"
 
                 # 构建提示词
                 prompt = _build_photo_prompt(request.date, request.category, request.note, request.user_prompt)
 
-                # 发送AI识别状态
-                yield f"data: {json.dumps({'status': f'AI正在识别第 {img_idx + 1} 张图片...'}, ensure_ascii=False)}\n\n"
-
-                # 识别单张图片
-                recognized_data = await _call_deepseek_vision([img_base64], prompt)
-
-                # 发送解析状态
-                yield f"data: {json.dumps({'status': f'解析第 {img_idx + 1} 张图片结果...'}, ensure_ascii=False)}\n\n"
+                # 用URL调用API（更快）
+                recognized_data = await _call_vision_api_with_url(img_url, prompt)
 
                 if not recognized_data:
-                    # 返回空批次
-                    yield f"data: {json.dumps({'batch': img_idx + 1, 'total_batches': len(request.images), 'data': [], 'error': '未能识别出有效数据'}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'batch': img_idx + 1, 'total_batches': len(request.image_urls), 'data': [], 'error': '未能识别出有效数据'}, ensure_ascii=False)}\n\n"
                     continue
 
                 # 人员匹配逻辑
@@ -738,13 +817,12 @@ async def preview_photo(request: PhotoPreviewRequest, req: Request):
                             from datetime import datetime
                             date = datetime.now().strftime("%Y-%m-%d")
 
-                        # 分类优先用用户指定的
                         category = request.category or item.get("category", "其他")
                         direction = "income" if "收" in item.get("direction", "收礼") else "expense"
                         address = item.get("address", "").strip()
                         note = request.note or item.get("note", "")
 
-                        # 查找同名人员（只用姓名匹配）
+                        # 查找同名人员
                         same_name_people = conn.execute("""
                             SELECT p.id, p.name, p.note, p.phone, p.address,
                                    COUNT(t.id) as tx_count,
@@ -755,18 +833,14 @@ async def preview_photo(request: PhotoPreviewRequest, req: Request):
                             GROUP BY p.id
                         """, (user_id, user_id, name)).fetchall()
 
-                        # 自动匹配逻辑：只用姓名
-                        # 如果同名只有1人，自动关联；如果同名有多人，需要用户选择
                         selected_person_id = None
                         auto_fixed = False
                         needs_confirm = False
 
                         if len(same_name_people) == 1:
-                            # 只有一个同名的人，自动关联
                             selected_person_id = same_name_people[0]["id"]
                             auto_fixed = True
                         elif len(same_name_people) > 1:
-                            # 多个同名的人，需要用户选择
                             needs_confirm = True
 
                         result_item = {
@@ -790,7 +864,6 @@ async def preview_photo(request: PhotoPreviewRequest, req: Request):
                         if auto_fixed:
                             total_auto_fixed += 1
                         if not selected_person_id and not needs_confirm:
-                            # 新人员（没有同名的人）
                             total_new_persons += 1
                         if needs_confirm:
                             total_needs_confirm += 1
@@ -803,7 +876,7 @@ async def preview_photo(request: PhotoPreviewRequest, req: Request):
                 # 返回这批数据
                 result = {
                     "batch": img_idx + 1,
-                    "total_batches": len(request.images),
+                    "total_batches": len(request.image_urls),
                     "data": batch_data,
                     "accumulated": {
                         "total": len(total_data),
@@ -816,7 +889,7 @@ async def preview_photo(request: PhotoPreviewRequest, req: Request):
 
             except Exception as e:
                 print(f"Error processing image {img_idx}: {e}")
-                yield f"data: {json.dumps({'batch': img_idx + 1, 'total_batches': len(request.images), 'data': [], 'error': str(e)}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'batch': img_idx + 1, 'total_batches': len(request.image_urls), 'data': [], 'error': str(e)}, ensure_ascii=False)}\n\n"
 
         # 发送完成信号
         yield f"data: {json.dumps({'done': True, 'total': len(total_data)}, ensure_ascii=False)}\n\n"
@@ -827,7 +900,7 @@ async def preview_photo(request: PhotoPreviewRequest, req: Request):
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"  # 禁用Nginx缓冲
+            "X-Accel-Buffering": "no"
         }
     )
 
@@ -915,6 +988,159 @@ def _build_photo_prompt(date: str = None, category: str = None, note: str = None
 只返回JSON。"""
 
 
+async def _call_vision_api_with_url(img_url: str, prompt: str) -> List[dict]:
+    """使用图片URL调用视觉API（比base64更快）"""
+    import time
+    start_time = time.time()
+
+    print(f"[API] 使用URL调用: {img_url[:100]}...")
+
+    # 优先使用阿里云API
+    if TENCENT_API_URL and TENCENT_API_KEY:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(_executor, _sync_call_api_with_url, img_url, prompt)
+    else:
+        result = await loop.run_in_executor(_executor, _sync_call_local_api_with_url, img_url, prompt)
+
+    elapsed = time.time() - start_time
+    print(f"[API] URL调用完成，耗时 {elapsed:.2f}s")
+
+    return result
+
+
+def _sync_call_api_with_url(img_url: str, prompt: str) -> List[dict]:
+    """使用图片URL调用阿里云百炼API"""
+    import time
+    api_start = time.time()
+
+    # OpenAI兼容格式，直接使用URL
+    payload = {
+        "model": TENCENT_MODEL,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": img_url}}
+                ]
+            }
+        ],
+        "max_tokens": 2048,
+        "temperature": 1,
+        "extra_body": {"enable_thinking": False}
+    }
+
+    print(f"[API] 开始调用: model={TENCENT_MODEL}, URL模式, 时间={api_start}")
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {TENCENT_API_KEY}"
+    }
+
+    response = httpx.post(
+        TENCENT_API_URL,
+        json=payload,
+        headers=headers,
+        timeout=300.0
+    )
+
+    api_end = time.time()
+    print(f"[API] 响应收到: status={response.status_code}, 耗时={api_end - api_start:.2f}s")
+
+    if response.status_code != 200:
+        error_text = response.text
+        print(f"API Error: status={response.status_code}, response={error_text}")
+        raise Exception(f"API调用失败({response.status_code}): {error_text}")
+
+    result = response.json()
+
+    # 解析返回内容
+    try:
+        message = result["choices"][0]["message"]
+        message_content = message.get("content", "") or message.get("reasoning_content", "")
+
+        if not message_content:
+            raise Exception("AI返回内容为空")
+
+        # 提取JSON
+        if "```json" in message_content:
+            message_content = message_content.split("```json")[1].split("```")[0]
+        elif "```" in message_content:
+            message_content = message_content.split("```")[1].split("```")[0]
+
+        data = json.loads(message_content.strip())
+
+        if isinstance(data, list):
+            return data
+        elif isinstance(data, dict) and "data" in data:
+            return data["data"]
+        else:
+            return [data]
+
+    except json.JSONDecodeError as e:
+        raise Exception(f"解析AI返回结果失败: {str(e)}")
+    except KeyError as e:
+        raise Exception(f"AI返回格式异常: {str(e)}")
+
+
+def _sync_call_local_api_with_url(img_url: str, prompt: str) -> List[dict]:
+    """使用图片URL调用本地模型API"""
+    payload = {
+        "model": LOCAL_MODEL,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": img_url}}
+                ]
+            }
+        ],
+        "max_tokens": 4096,
+        "enable_thinking": False,
+        "temperature": 0.1
+    }
+
+    headers = {"Content-Type": "application/json"}
+
+    response = httpx.post(
+        LOCAL_API_URL,
+        json=payload,
+        headers=headers,
+        timeout=300.0
+    )
+
+    if response.status_code != 200:
+        raise Exception(f"API调用失败({response.status_code}): {response.text}")
+
+    result = response.json()
+
+    try:
+        message = result["choices"][0]["message"]
+        message_content = message.get("content", "") or message.get("reasoning_content", "")
+
+        if not message_content:
+            raise Exception("AI返回内容为空")
+
+        if "```json" in message_content:
+            message_content = message_content.split("```json")[1].split("```")[0]
+        elif "```" in message_content:
+            message_content = message_content.split("```")[1].split("```")[0]
+
+        data = json.loads(message_content.strip())
+
+        if isinstance(data, list):
+            return data
+        elif isinstance(data, dict) and "data" in data:
+            return data["data"]
+        else:
+            return [data]
+
+    except json.JSONDecodeError as e:
+        raise Exception(f"解析AI返回结果失败: {str(e)}")
+
+
+# 保留旧的base64调用函数作为备用
 async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
     """调用视觉API识别图片
 

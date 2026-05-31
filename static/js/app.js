@@ -1706,33 +1706,58 @@ async function submitPhotoRecognition() {
   const note = document.getElementById('photo-note').value.trim() || null;
   const userPrompt = document.getElementById('photo-prompt')?.value.trim().slice(0, 500) || null;
 
-  // 提取base64数据（去掉前缀）
-  const images = _selectedPhotos.map(photo => {
-    return photo.split(',')[1];
-  });
-
-  // 显示加载状态（固定提示）
+  // 显示加载状态
   const btn = document.getElementById('btn-photo-submit');
   const originalText = btn.textContent;
-  btn.textContent = '🤖 AI识别中...';
+  btn.textContent = '📤 上传图片中...';
   btn.disabled = true;
 
-  showImportLoading('正在识别礼簿照片，大约需要50秒，请耐心等待...');
-
-  // 初始化预览区
-  pendingExcelData = [];
-  document.getElementById('excel-preview-area').style.display = 'block';
-  document.getElementById('excel-preview-body').innerHTML = '';
+  showImportLoading('正在上传图片...');
 
   try {
-    // 使用 fetch + ReadableStream 处理 SSE 流式响应
+    // 第一步：上传所有图片，获取URL
+    const uploadedUrls = [];
+    for (let i = 0; i < _selectedPhotos.length; i++) {
+      const photo = _selectedPhotos[i];
+      showImportLoading(`上传图片 ${i + 1}/${_selectedPhotos.length}...`);
+
+      // 将base64转为blob
+      const response = await fetch(photo);
+      const blob = await response.blob();
+
+      // 上传图片
+      const formData = new FormData();
+      formData.append('file', blob, 'photo.jpg');
+
+      const uploadRes = await fetch(API + '/api/import/photo-upload', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token },
+        body: formData
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error('上传图片失败');
+      }
+
+      const uploadData = await uploadRes.json();
+      uploadedUrls.push(uploadData.url);
+    }
+
+    // 第二步：用URL调用识别API
+    showImportLoading('正在识别礼簿照片，大约需要50秒，请耐心等待...');
+
+    // 初始化预览区
+    pendingExcelData = [];
+    document.getElementById('excel-preview-area').style.display = 'block';
+    document.getElementById('excel-preview-body').innerHTML = '';
+
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = 'Bearer ' + token;
 
     const response = await fetch(API + '/api/import/photo-preview', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ images, date, category, note, user_prompt: userPrompt })
+      body: JSON.stringify({ image_urls: uploadedUrls, date, category, note, user_prompt: userPrompt })
     });
 
     if (!response.ok) {
@@ -1758,19 +1783,15 @@ async function submitPhotoRecognition() {
             const data = JSON.parse(line.slice(6));
 
             if (data.done) {
-              // 识别完成
               hideImportLoading();
               showToast(`识别完成！共 ${data.total} 条记录`);
             } else if (data.data && data.data.length > 0) {
-              // 追加数据到预览（不更新进度提示）
               pendingExcelData.push(...data.data);
 
-              // 更新计数
               const acc = data.accumulated;
               let countText = `共 ${acc.total} 条 | 自动匹配 ${acc.auto_fixed} 条 | 需确认 ${acc.needs_confirm} 条 | 新人 ${acc.new_persons} 条`;
               document.getElementById('excel-preview-count').textContent = countText;
 
-              // 渲染预览（追加模式）
               renderExcelPreview(pendingExcelData);
             }
           } catch (e) {
@@ -1792,7 +1813,7 @@ async function submitPhotoRecognition() {
   } catch (err) {
     hideImportLoading();
     console.error('识别错误:', err);
-    showToast('识别失败: ' + err.message, 'error');
+    showToast('操作失败: ' + err.message, 'error');
   }
 
   btn.textContent = originalText;
