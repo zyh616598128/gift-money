@@ -935,7 +935,7 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
 
 
 def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
-    """同步调用腾讯云 API（OpenAI兼容格式）"""
+    """同步调用阿里云百炼 API（OpenAI兼容格式）"""
     # OpenAI 兼容格式
     payload = {
         "model": TENCENT_MODEL,
@@ -950,10 +950,11 @@ def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
         ],
         "max_tokens": 2048,
         "temperature": 1,
-        "enable_thinking": False
+        # 通过 extra_body 关闭深度思考模式（百炼API要求）
+        "extra_body": {"enable_thinking": False}
     }
 
-    print(f"Sending to Tencent API: model={TENCENT_MODEL}, url={TENCENT_API_URL}")
+    print(f"Sending to API: model={TENCENT_MODEL}, url={TENCENT_API_URL}")
 
     # OpenAI 兼容认证头
     headers = {
