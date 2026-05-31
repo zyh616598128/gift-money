@@ -947,10 +947,10 @@ def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
 
     print(f"Sending to Tencent API: model={TENCENT_MODEL}")
 
-    # 腾讯云使用 x-api-key 头认证
+    # 腾讯云 Coding API 认证头
     headers = {
         "Content-Type": "application/json",
-        "x-api-key": TENCENT_API_KEY
+        "Authorization": TENCENT_API_KEY
     }
 
     response = httpx.post(
