@@ -900,6 +900,8 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
 
     优先使用腾讯云API（Anthropic兼容格式），否则使用本地模型（OpenAI兼容格式）
     """
+    import time
+    start_time = time.time()
 
     # 只支持单张图片，取第一张
     if not images:
@@ -910,16 +912,25 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
     if "," in img_base64:
         img_base64 = img_base64.split(",")[1]
 
+    t1 = time.time()
+    print(f"[TIME] 接收图片: {t1 - start_time:.2f}s, 原始大小: {len(img_base64)} chars")
+
     # 压缩图片（在线程池中执行）
     loop = asyncio.get_event_loop()
     compressed_b64 = await loop.run_in_executor(_executor, _compress_image, img_base64)
-    print(f"Image compressed: {len(img_base64)} -> {len(compressed_b64)} chars")
+    t2 = time.time()
+    print(f"[TIME] 压缩图片: {t2 - t1:.2f}s, 压缩后: {len(compressed_b64)} chars")
 
     # 优先使用腾讯云API
     if TENCENT_API_URL and TENCENT_API_KEY:
         result = await loop.run_in_executor(_executor, _sync_call_tencent_api, compressed_b64, prompt)
     else:
         result = await loop.run_in_executor(_executor, _sync_call_local_api, compressed_b64, prompt)
+
+    t3 = time.time()
+    print(f"[TIME] API调用: {t3 - t2:.2f}s")
+    print(f"[TIME] 总耗时: {t3 - start_time:.2f}s")
+
     return result
 
 
