@@ -1,6 +1,6 @@
 """Excel import/export routes."""
 from fastapi import APIRouter, UploadFile, File, Query, Depends, HTTPException, Request, Form
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
 import openpyxl
@@ -23,13 +23,9 @@ router = APIRouter(prefix="/api", tags=["import-export"])
 # 线程池用于并行处理数据
 _executor = ThreadPoolExecutor(max_workers=4)
 
-# 腾讯云 GLM-5 API 配置（从环境变量读取）
-TENCENT_API_KEY = os.environ.get("TENCENT_API_KEY", "")
-TENCENT_API_URL = os.environ.get("TENCENT_API_URL", "https://api.lkeap.cloud.tencent.com/coding/anthropic/v1/messages")
-TENCENT_MODEL = os.environ.get("TENCENT_MODEL", "glm-5")
-
-if not TENCENT_API_KEY:
-    print("WARNING: TENCENT_API_KEY environment variable not set. Photo recognition will not work.")
+# 本地模型 API 配置（从环境变量读取，默认本地）
+LOCAL_API_URL = os.environ.get("LOCAL_API_URL", "http://127.0.0.1:1234/v1/chat/completions")
+LOCAL_MODEL = os.environ.get("LOCAL_MODEL", "qwen/qwen3.6-35b-a3b")
 
 
 @router.get("/categories/list")
@@ -666,13 +662,14 @@ class PhotoPreviewRequest(BaseModel):
     date: Optional[str] = None  # 用户提供的日期
     category: Optional[str] = None  # 用户提供的分类
     note: Optional[str] = None  # 用户提供的备注
+    user_prompt: Optional[str] = None  # 用户自定义提示词（最多500字）
 
 
 @router.post("/import/photo-preview")
 async def preview_photo(request: PhotoPreviewRequest, req: Request):
     """
-    识别礼簿照片，返回结构化预览数据。
-    复用Excel导入的预览逻辑，返回相同的数据结构。
+    识别礼簿照片，流式返回结构化预览数据。
+    每识别完一张照片就返回一批数据。
     """
     user = get_current_user(req)
     user_id = user["user_id"]
@@ -680,110 +677,199 @@ async def preview_photo(request: PhotoPreviewRequest, req: Request):
     if not request.images:
         raise HTTPException(status_code=400, detail="请至少上传一张照片")
 
-    # 调试日志：检查图片数据
-    print(f"Received {len(request.images)} images")
-    for i, img in enumerate(request.images):
-        print(f"Image {i}: length={len(img) if img else 0}, start={img[:50] if img and len(img) > 50 else img}")
+    print(f"Received {len(request.images)} images for streaming recognition")
 
-    # 构建提示词
-    prompt = _build_photo_prompt(request.date, request.category, request.note)
+    async def generate():
+        """流式生成识别结果"""
+        total_data = []
+        total_auto_fixed = 0
+        total_new_persons = 0
+        total_needs_confirm = 0
 
-    # 调用DeepSeek Vision API
-    try:
-        recognized_data = await _call_deepseek_vision(request.images, prompt)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI识别失败: {str(e)}")
+        for img_idx, img_base64 in enumerate(request.images):
+            try:
+                # 构建提示词
+                prompt = _build_photo_prompt(request.date, request.category, request.note, request.user_prompt)
 
-    if not recognized_data:
-        raise HTTPException(status_code=400, detail="未能识别出有效数据")
+                # 识别单张图片
+                recognized_data = await _call_deepseek_vision([img_base64], prompt)
 
-    # 复用Excel导入的人员匹配逻辑
+                if not recognized_data:
+                    # 返回空批次
+                    yield f"data: {json.dumps({'batch': img_idx + 1, 'total_batches': len(request.images), 'data': [], 'error': '未能识别出有效数据'}, ensure_ascii=False)}\n\n"
+                    continue
+
+                # 人员匹配逻辑
+                conn = get_connection()
+                batch_data = []
+                try:
+                    for idx, item in enumerate(recognized_data):
+                        name = item.get("name", "").strip()
+                        if not name:
+                            continue
+
+                        try:
+                            amount = float(item.get("amount", 0))
+                        except (ValueError, TypeError):
+                            continue
+                        if amount <= 0:
+                            continue
+
+                        # 使用用户提供的日期，或AI识别的日期，或今天
+                        date = request.date or item.get("date", "") or ""
+                        if not date:
+                            from datetime import datetime
+                            date = datetime.now().strftime("%Y-%m-%d")
+
+                        # 分类优先用用户指定的
+                        category = request.category or item.get("category", "其他")
+                        direction = "income" if "收" in item.get("direction", "收礼") else "expense"
+                        address = item.get("address", "").strip()
+                        note = request.note or item.get("note", "")
+
+                        # 查找同名人员（只用姓名匹配）
+                        same_name_people = conn.execute("""
+                            SELECT p.id, p.name, p.note, p.phone, p.address,
+                                   COUNT(t.id) as tx_count,
+                                   COALESCE(SUM(CASE WHEN t.direction='income' THEN t.amount ELSE -t.amount END), 0) as balance
+                            FROM people p
+                            LEFT JOIN transactions t ON t.person_id = p.id AND t.user_id = ?
+                            WHERE p.user_id = ? AND p.name = ?
+                            GROUP BY p.id
+                        """, (user_id, user_id, name)).fetchall()
+
+                        # 自动匹配逻辑：只用姓名
+                        # 如果同名只有1人，自动关联；如果同名有多人，需要用户选择
+                        selected_person_id = None
+                        auto_fixed = False
+                        needs_confirm = False
+
+                        if len(same_name_people) == 1:
+                            # 只有一个同名的人，自动关联
+                            selected_person_id = same_name_people[0]["id"]
+                            auto_fixed = True
+                        elif len(same_name_people) > 1:
+                            # 多个同名的人，需要用户选择
+                            needs_confirm = True
+
+                        result_item = {
+                            "row_idx": len(total_data) + len(batch_data) + 1,
+                            "date": date[:10],
+                            "original_name": name,
+                            "name": name,
+                            "amount": amount,
+                            "category": category,
+                            "direction": direction,
+                            "address": address,
+                            "note": note,
+                            "auto_fixed": auto_fixed,
+                            "same_name_people": [dict(p) for p in same_name_people],
+                            "needs_confirm": needs_confirm,
+                            "selected_person_id": selected_person_id,
+                            "new_person_address": "",
+                        }
+                        batch_data.append(result_item)
+
+                        if auto_fixed:
+                            total_auto_fixed += 1
+                        if not selected_person_id and not needs_confirm:
+                            # 新人员（没有同名的人）
+                            total_new_persons += 1
+                        if needs_confirm:
+                            total_needs_confirm += 1
+
+                finally:
+                    conn.close()
+
+                total_data.extend(batch_data)
+
+                # 返回这批数据
+                result = {
+                    "batch": img_idx + 1,
+                    "total_batches": len(request.images),
+                    "data": batch_data,
+                    "accumulated": {
+                        "total": len(total_data),
+                        "auto_fixed": total_auto_fixed,
+                        "new_persons": total_new_persons,
+                        "needs_confirm": total_needs_confirm,
+                    }
+                }
+                yield f"data: {json.dumps(result, ensure_ascii=False)}\n\n"
+
+            except Exception as e:
+                print(f"Error processing image {img_idx}: {e}")
+                yield f"data: {json.dumps({'batch': img_idx + 1, 'total_batches': len(request.images), 'data': [], 'error': str(e)}, ensure_ascii=False)}\n\n"
+
+        # 发送完成信号
+        yield f"data: {json.dumps({'done': True, 'total': len(total_data)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+class MatchPersonRequest(BaseModel):
+    name: str
+    address: str = ""
+
+
+@router.post("/import/match-person")
+def match_person(request: MatchPersonRequest, req: Request):
+    """
+    根据姓名匹配人员，返回匹配结果。
+    用于前端预览页编辑姓名后重新匹配。
+    匹配规则：只用姓名匹配，1人自动关联，多人需用户选择。
+    """
+    user = get_current_user(req)
+    user_id = user["user_id"]
+
+    name = request.name.strip()
+    # address 参数保留但不用于匹配逻辑，仅用于前端显示
+
+    if not name:
+        return {
+            "same_name_people": [],
+            "needs_confirm": False,
+            "selected_person_id": None,
+            "auto_fixed": False
+        }
+
     conn = get_connection()
-    data = []
     try:
-        for idx, item in enumerate(recognized_data):
-            name = item.get("name", "").strip()
-            if not name:
-                continue
+        # 查找同名人员（只用姓名匹配）
+        same_name_people = conn.execute("""
+            SELECT p.id, p.name, p.note, p.phone, p.address,
+                   COUNT(t.id) as tx_count,
+                   COALESCE(SUM(CASE WHEN t.direction='income' THEN t.amount ELSE -t.amount END), 0) as balance
+            FROM people p
+            LEFT JOIN transactions t ON t.person_id = p.id AND t.user_id = ?
+            WHERE p.user_id = ? AND p.name = ?
+            GROUP BY p.id
+        """, (user_id, user_id, name)).fetchall()
 
-            amount = float(item.get("amount", 0))
-            if amount <= 0:
-                continue
+        # 自动匹配逻辑：只用姓名
+        selected_person_id = None
+        auto_fixed = False
+        needs_confirm = False
 
-            # 使用用户提供的日期，或AI识别的日期，或今天
-            date = request.date or item.get("date", "") or ""
-            if not date:
-                from datetime import datetime
-                date = datetime.now().strftime("%Y-%m-%d")
-
-            # 分类优先用用户指定的
-            category = request.category or item.get("category", "其他")
-            direction = "income" if "收" in item.get("direction", "收礼") else "expense"
-            address = item.get("address", "").strip()
-            note = request.note or item.get("note", "")
-
-            # 查找同名人员
-            same_name_people = conn.execute("""
-                SELECT p.id, p.name, p.note, p.phone, p.address,
-                       COUNT(t.id) as tx_count,
-                       COALESCE(SUM(CASE WHEN t.direction='income' THEN t.amount ELSE -t.amount END), 0) as balance
-                FROM people p
-                LEFT JOIN transactions t ON t.person_id = p.id AND t.user_id = ?
-                WHERE p.user_id = ? AND p.name = ?
-                GROUP BY p.id
-            """, (user_id, user_id, name)).fetchall()
-
-            # 自动匹配逻辑：精确匹配或单名匹配
-            selected_person_id = None
-            auto_fixed = False
-
-            if same_name_people:
-                # 尝试精确匹配 name + address
-                exact_matches = [p for p in same_name_people if p["address"] == address]
-
-                if len(exact_matches) == 1:
-                    selected_person_id = exact_matches[0]["id"]
-                    auto_fixed = True
-                elif len(same_name_people) == 1:
-                    # 只有一个同名的人，默认关联
-                    selected_person_id = same_name_people[0]["id"]
-                    auto_fixed = True
-
-            result_item = {
-                "row_idx": idx + 1,
-                "date": date[:10],
-                "original_name": name,
-                "name": name,
-                "amount": amount,
-                "category": category,
-                "direction": direction,
-                "address": address,
-                "note": note,
-                "auto_fixed": auto_fixed,
-                "same_name_people": [dict(p) for p in same_name_people],
-                "needs_confirm": len(same_name_people) > 1,
-                "selected_person_id": selected_person_id,
-                "new_person_address": "",
-            }
-            data.append(result_item)
-
-        total = len(data)
-        new_persons = sum(1 for d in data if not d["needs_confirm"] and not d["selected_person_id"])
-        needs_confirm_count = sum(1 for d in data if d["needs_confirm"])
-        auto_fixed_count = sum(1 for d in data if d["auto_fixed"])
+        if len(same_name_people) == 1:
+            # 只有一个同名的人，自动关联
+            selected_person_id = same_name_people[0]["id"]
+            auto_fixed = True
+        elif len(same_name_people) > 1:
+            # 多个同名的人，需要用户选择
+            needs_confirm = True
 
         return {
-            "data": data,
-            "total": total,
-            "auto_fixed": auto_fixed_count,
-            "new_persons": new_persons,
-            "needs_confirm": needs_confirm_count,
+            "same_name_people": [dict(p) for p in same_name_people],
+            "needs_confirm": needs_confirm,
+            "selected_person_id": selected_person_id,
+            "auto_fixed": auto_fixed
         }
     finally:
         conn.close()
 
 
-def _build_photo_prompt(date: str = None, category: str = None, note: str = None) -> str:
+def _build_photo_prompt(date: str = None, category: str = None, note: str = None, user_prompt: str = None) -> str:
     """构建识别提示词"""
 
     user_hints = []
@@ -796,33 +882,17 @@ def _build_photo_prompt(date: str = None, category: str = None, note: str = None
 
     hints_text = "\n".join(user_hints) if user_hints else "无额外提示"
 
-    return f"""你是一个礼簿识别助手。请仔细识别照片中的礼簿记录。
+    # 用户自定义提示词
+    custom_prompt = f"\n用户额外说明: {user_prompt}" if user_prompt else ""
 
-用户提供的提示信息:
-{hints_text}
-
-标准格式参考（Excel模板）:
-| 日期 | 姓名 | 金额 | 分类 | 方向 | 地址 | 备注 |
-示例行: 2025-01-15 | 张三 | 200 | 婚嫁 | 收礼 | 北京市朝阳区 | 邻居
-
-识别要求:
-1. 提取每条记录的：姓名、金额
-2. 如果用户未提供日期，尝试识别照片中的日期
-3. 如果用户未提供分类，根据内容判断（婚嫁、葬礼、生日、乔迁、其他）
-4. 方向默认为"收礼"（除非明确标注为送礼）
-5. 如果有地址信息请提取
-
-请返回JSON数组格式，不要包含任何其他文字:
+    return f"""/no_think
+识别礼簿照片中的记录，直接返回JSON数组:
 [
-  {{"name": "张三", "amount": 200, "date": "2025-01-15", "category": "婚嫁", "direction": "收礼", "address": "", "note": ""}},
-  ...
+  {{"name": "姓名", "amount": 金额数字, "date": "YYYY-MM-DD", "category": "婚嫁/葬礼/生日/乔迁/其他", "direction": "收礼", "address": "", "note": ""}}
 ]
 
-注意:
-- 金额只保留数字，不要带单位
-- 日期格式为 YYYY-MM-DD
-- 如果照片模糊或无法识别某条，尽量猜测或跳过
-- 确保返回的是有效的JSON数组"""
+用户提示: {hints_text}{custom_prompt}
+只返回JSON，不要思考过程。"""
 
 
 async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
@@ -847,7 +917,7 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
     print(f"Image compressed: {len(img_base64)} -> {len(compressed_b64)} chars")
 
     # 调用API
-    result = await loop.run_in_executor(_executor, _sync_call_tencent_api, compressed_b64, prompt)
+    result = await loop.run_in_executor(_executor, _sync_call_local_api, compressed_b64, prompt)
     return result
 
 
@@ -892,12 +962,13 @@ def _compress_image(img_base64: str, max_size: int = 800, quality: int = 50, max
     return result_b64
 
 
-def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
-    """同步调用腾讯云GLM-5 API（在线程池中执行）"""
+def _sync_call_local_api(img_base64: str, prompt: str) -> List[dict]:
+    """同步调用本地模型API（OpenAI兼容格式）"""
 
-    # 腾讯云Anthropic兼容格式：content是数组
+    # OpenAI兼容格式：content是数组
+    # 禁用思考模式：添加 enable_thinking=False
     payload = {
-        "model": TENCENT_MODEL,
+        "model": LOCAL_MODEL,
         "messages": [
             {
                 "role": "user",
@@ -907,7 +978,9 @@ def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
                 ]
             }
         ],
-        "max_tokens": 4096
+        "max_tokens": 4096,
+        "enable_thinking": False,
+        "temperature": 0.1
     }
 
     # 调试：打印payload结构
@@ -916,30 +989,34 @@ def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
     print(f"Sending payload: {json.dumps(debug_payload, ensure_ascii=False)}")
 
     headers = {
-        "Authorization": f"Bearer {TENCENT_API_KEY}",
         "Content-Type": "application/json"
     }
 
-    # 使用httpx同步客户端
+    # 使用httpx同步客户端调用本地API
     response = httpx.post(
-        TENCENT_API_URL,
+        LOCAL_API_URL,
         json=payload,
         headers=headers,
-        timeout=120.0
+        timeout=300.0
     )
 
     if response.status_code != 200:
         error_text = response.text
-        print(f"Tencent API Error: status={response.status_code}, response={error_text}")
+        print(f"Local API Error: status={response.status_code}, response={error_text}")
         raise Exception(f"API调用失败({response.status_code}): {error_text}")
 
     result = response.json()
-    print(f"Tencent API Response: {json.dumps(result, ensure_ascii=False)[:2000]}")
+    print(f"Local API Response: {json.dumps(result, ensure_ascii=False)[:2000]}")
 
-    # 解析返回内容
+    # 解析返回内容（OpenAI格式）
     try:
-        message_content = result["content"][0]["text"] if "content" in result else result["choices"][0]["message"]["content"]
+        message = result["choices"][0]["message"]
+        # 优先使用 content，如果为空则使用 reasoning_content
+        message_content = message.get("content", "") or message.get("reasoning_content", "")
         print(f"Message content: {message_content[:1000]}")
+
+        if not message_content:
+            raise Exception("AI返回内容为空")
 
         # 尝试提取JSON
         # 去除可能的markdown代码块标记

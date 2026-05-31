@@ -238,6 +238,10 @@
                 <label>备注（可选）</label>
                 <input id="photo-note" placeholder="如：何金梅结婚">
               </div>
+              <div class="form-group" style="grid-column:1/-1;">
+                <label>AI提示词（可选，最多500字）</label>
+                <textarea id="photo-prompt" placeholder="输入自定义提示词，帮助AI更准确识别。例如：这是王明的婚礼礼簿，请识别所有红包记录..." style="min-height:80px;resize:vertical;" maxlength="500"></textarea>
+              </div>
             </div>
 
             <button class="btn btn-primary" style="margin-top:12px;" onclick="submitPhotoRecognition()" id="btn-photo-submit">
