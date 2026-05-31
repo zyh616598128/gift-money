@@ -691,8 +691,8 @@ async def preview_photo(request: PhotoPreviewRequest, req: Request):
         total_new_persons = 0
         total_needs_confirm = 0
 
-        # 发送开始状态
-        yield f"data: {json.dumps({'status': '开始处理图片...'}, ensure_ascii=False)}\n\n"
+        # 立即发送开始状态（确保客户端知道已连接）
+        yield f"data: {json.dumps({'status': '已收到图片，开始处理...'}, ensure_ascii=False)}\n\n"
 
         for img_idx, img_base64 in enumerate(request.images):
             try:

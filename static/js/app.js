@@ -1702,7 +1702,8 @@ async function submitPhotoRecognition() {
       throw new Error(err.detail || '识别失败');
     }
 
-    updateProgress('AI正在识别图片内容...');
+    // 请求已发送，更新状态
+    updateProgress('已连接服务器，等待AI响应...');
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
