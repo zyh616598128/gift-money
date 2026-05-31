@@ -296,16 +296,49 @@ async function viewPersonDetail(id) {
     if (d.note) html += '📝 ' + d.note;
     html += '</div>';
   }
-  html += '<div class="table-wrapper"><table><thead><tr><th>日期</th><th>人名</th><th>分类</th><th>金额</th><th>方向</th><th>备注</th></tr></thead><tbody>';
-  html += (d.transactions || []).map(r =>
-    `<tr><td>${r.date}</td><td>${r.name}</td>
-     <td><span class="tag ${tagClass(r.category)}">${r.category}</span></td>
-     <td class="${r.direction==='income'?'amount-income':'amount-expense'}">${r.direction==='income'?'+':'-'}${fmt(r.amount)}</td>
-     <td>${r.direction==='income'?'收礼':'送礼'}</td>
-     <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.note||'').replace(/"/g,'&quot;')}">${r.note||'-'}</td></tr>`
-  ).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:32px;">无记录</td></tr>';
-  html += '</tbody></table></div>';
-  document.getElementById('person-modal-body').innerHTML = html;
+
+  if (isMobile) {
+    // 移动端：卡片列表
+    html += '<div id="person-tx-card-container" class="mobile-only"></div>';
+    document.getElementById('person-modal-body').innerHTML = html;
+    const container = document.getElementById('person-tx-card-container');
+    if ((d.transactions || []).length === 0) {
+      container.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>无记录</p></div>';
+    } else {
+      container.innerHTML = (d.transactions || []).map(r => {
+        const amt = Number(r.amount) || 0;
+        return `<div class="mobile-tx-card">
+          <div class="mobile-tx-card-header">
+            <div>
+              <div style="font-size:12px;color:var(--text-muted);">日期</div>
+              <div class="mobile-tx-card-name">${r.date}</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:12px;color:var(--text-muted);">金额</div>
+              <div class="mobile-tx-card-amount ${r.direction==='income'?'amount-income':'amount-expense'}">${r.direction==='income'?'+':'-'}${fmt(amt)}</div>
+            </div>
+          </div>
+          <div class="mobile-tx-card-meta">
+            <span>🏷️ 分类: ${r.category}</span>
+            <span>${r.direction==='income'?'📥 收礼':'📤 送礼'}</span>
+            ${r.note ? `<span>📝 备注: ${r.note}</span>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+    }
+  } else {
+    // Web端：表格
+    html += '<div class="table-wrapper desktop-only"><table><thead><tr><th>日期</th><th>人名</th><th>分类</th><th>金额</th><th>方向</th><th>备注</th></tr></thead><tbody>';
+    html += (d.transactions || []).map(r =>
+      `<tr><td>${r.date}</td><td>${r.name}</td>
+       <td><span class="tag ${tagClass(r.category)}">${r.category}</span></td>
+       <td class="${r.direction==='income'?'amount-income':'amount-expense'}">${r.direction==='income'?'+':'-'}${fmt(r.amount)}</td>
+       <td>${r.direction==='income'?'收礼':'送礼'}</td>
+       <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${(r.note||'').replace(/"/g,'&quot;')}">${r.note||'-'}</td></tr>`
+    ).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:32px;">无记录</td></tr>';
+    html += '</tbody></table></div>';
+    document.getElementById('person-modal-body').innerHTML = html;
+  }
   document.getElementById('person-modal').classList.add('show');
 }
 
