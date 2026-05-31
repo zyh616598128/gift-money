@@ -1015,7 +1015,7 @@ def _sync_call_tencent_api(img_base64: str, prompt: str) -> List[dict]:
         raise Exception(f"AI返回格式异常: {str(e)}")
 
 
-def _compress_image(img_base64: str, max_size: int = 600, quality: int = 40, max_file_size: int = 30000) -> str:
+def _compress_image(img_base64: str, max_size: int = 400, quality: int = 30, max_file_size: int = 20000) -> str:
     """压缩图片到指定大小以下（更小更快）"""
     from PIL import Image
     import io
