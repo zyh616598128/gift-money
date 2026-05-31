@@ -868,10 +868,12 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
             raise Exception(f"API调用失败({response.status_code}): {error_text}")
 
         result = response.json()
+        print(f"DeepSeek API Response: {json.dumps(result, ensure_ascii=False)[:2000]}")
 
     # 解析返回内容
     try:
         message_content = result["choices"][0]["message"]["content"]
+        print(f"Message content: {message_content[:1000]}")
 
         # 尝试提取JSON
         # 去除可能的markdown代码块标记
