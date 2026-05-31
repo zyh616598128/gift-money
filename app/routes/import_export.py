@@ -843,7 +843,7 @@ async def _call_deepseek_vision(images: List[str], prompt: str) -> List[dict]:
 
     # DeepSeek V4 格式：image_data 作为message的独立字段
     payload = {
-        "model": "deepseek-v4-flash",
+        "model": "deepseek-chat",
         "messages": [
             {
                 "role": "user",
