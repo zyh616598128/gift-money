@@ -557,7 +557,7 @@ def confirm_import(data: dict, request: Request):
         # 收集所有需要创建的分类
         categories_to_create = set()
         for row in rows:
-            cat = row.get("category", "其他").strip()
+            cat = str(row.get("category", "其他") or "").strip()
             if cat and cat not in existing_cat_names:
                 categories_to_create.add(cat)
 
@@ -575,7 +575,7 @@ def confirm_import(data: dict, request: Request):
 
         for i, row in enumerate(rows):
             try:
-                name = row.get("name", "").strip()
+                name = str(row.get("name", "") or "").strip()
                 if not name:
                     skipped += 1
                     continue
@@ -598,10 +598,10 @@ def confirm_import(data: dict, request: Request):
                     """INSERT INTO transactions (user_id, person_id, name, amount, category, date, direction, note)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                     (user_id, person_id, name, amount,
-                     row.get("category", "其他"),
-                     row.get("date", ""),
-                     row.get("direction", "income"),
-                     row.get("note", "")),
+                     str(row.get("category", "其他") or ""),
+                     str(row.get("date", "") or ""),
+                     str(row.get("direction", "income") or "income"),
+                     str(row.get("note", "") or "")),
                 )
                 inserted += 1
 
@@ -639,8 +639,8 @@ def _resolve_or_create_person(conn, user_id: int, name: str, row: dict) -> Optio
         return int(selected_id)
 
     # 获取地址（name+address 为唯一键）
-    address = row.get("address", "").strip()
-    note = row.get("note", "").strip()
+    address = str(row.get("address", "") or "").strip()
+    note = str(row.get("note", "") or "").strip()
 
     # 检查是否已存在 name + address 的人员（唯一键）
     existing = conn.execute(
