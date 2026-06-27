@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import settings
 from app.database import init_db
-from app.routes import auth, transactions, categories, stats, people, import_export
+from app.routes import auth, transactions, categories, stats, people, import_export, wechat, mcp
 
 # 配置日志系统
 logging.basicConfig(
@@ -56,6 +56,8 @@ app.include_router(categories.router)
 app.include_router(stats.router)
 app.include_router(people.router)
 app.include_router(import_export.router)
+app.include_router(wechat.router)
+app.include_router(mcp.router)
 
 
 @app.on_event("startup")

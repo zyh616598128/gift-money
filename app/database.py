@@ -89,6 +89,62 @@ def init_db():
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS wechat_accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                channel TEXT NOT NULL DEFAULT 'wechat',
+                external_id TEXT NOT NULL,
+                nickname TEXT NOT NULL DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                UNIQUE(channel, external_id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel TEXT NOT NULL DEFAULT 'wechat',
+                external_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                content TEXT NOT NULL DEFAULT '',
+                intent TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'received',
+                response TEXT NOT NULL DEFAULT '',
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                UNIQUE(channel, message_id)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS transaction_drafts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                channel TEXT NOT NULL DEFAULT 'wechat',
+                external_id TEXT NOT NULL DEFAULT '',
+                parsed_json TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                expires_at TEXT NOT NULL,
+                confirmed_at TEXT,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS wechat_bind_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                code TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL DEFAULT 'pending',
+                expires_at TEXT NOT NULL,
+                used_at TEXT,
+                created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
+
         # ── Indexes ──
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_tx_user_date ON transactions(user_id, date DESC)",
@@ -101,6 +157,11 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_people_user_name ON people(user_id, name)",
             "CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_id)",
             "CREATE INDEX IF NOT EXISTS idx_categories_user_name ON categories(user_id, name)",
+            "CREATE INDEX IF NOT EXISTS idx_wechat_accounts_external ON wechat_accounts(channel, external_id)",
+            "CREATE INDEX IF NOT EXISTS idx_chat_messages_external ON chat_messages(channel, external_id, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_transaction_drafts_user ON transaction_drafts(user_id, status, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_wechat_bind_codes_user ON wechat_bind_codes(user_id, status, created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_wechat_bind_codes_code ON wechat_bind_codes(code, status)",
         ]
         for idx_sql in indexes:
             try:
