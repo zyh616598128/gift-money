@@ -1,6 +1,7 @@
 """Minimal MCP-over-HTTP endpoint for gift-money tools."""
 from __future__ import annotations
 
+import json
 from typing import Any, Callable, Dict
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -175,7 +176,11 @@ def _tool_descriptors():
 async def handle_mcp(request: Request, x_mcp_token: str = Header("")):
     """Handle a small MCP JSON-RPC subset used by Lobster/agent callers."""
     _check_token(x_mcp_token)
-    payload = await request.json()
+    try:
+        payload = await request.json()
+    except json.JSONDecodeError:
+        return _jsonrpc_error(None, -32700, "parse error")
+
     method = payload.get("method")
     request_id = payload.get("id")
     params = payload.get("params") or {}
