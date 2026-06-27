@@ -489,6 +489,7 @@
       <span class="arrow">▼</span>
     </div>
     <div class="user-dropdown" id="user-dropdown">
+      <div class="dropdown-item" onclick="showWechatBinding()">微信绑定</div>
       <div class="dropdown-item" onclick="showChangePassword()">🔑 修改密码</div>
       <div class="dropdown-item" onclick="logout()">🚪 退出登录</div>
     </div>
@@ -531,6 +532,7 @@
         <div style="font-size:18px;font-weight:600;" id="mobile-user-name">用户</div>
       </div>
       <div style="border-top:1px solid var(--border);padding-top:16px;">
+        <div class="dropdown-item" style="padding:14px 0;border-radius:8px;" onclick="showWechatBinding();document.getElementById('mobile-user-modal').classList.remove('show')">微信绑定</div>
         <div class="dropdown-item" style="padding:14px 0;border-radius:8px;" onclick="showChangePassword();document.getElementById('mobile-user-modal').classList.remove('show')">🔑 修改密码</div>
         <div class="dropdown-item" style="padding:14px 0;border-radius:8px;color:var(--expense);" onclick="logout()">🚪 退出登录</div>
       </div>
@@ -563,8 +565,27 @@
     </div>
   </div>
 
-  <script src="/static/js/config.js?v=3"></script>
-  <script src="/static/js/app.js?v=3"></script>
+  <!-- WeChat Binding Modal -->
+  <div class="modal-overlay" id="wechat-bind-modal">
+    <div class="modal">
+      <div class="modal-title">微信绑定</div>
+      <div class="form-group">
+        <label>绑定码</label>
+        <div id="wechat-bind-code" style="font-size:32px;font-weight:700;letter-spacing:4px;text-align:center;padding:16px;border:1px solid var(--border);border-radius:8px;">------</div>
+      </div>
+      <div class="form-group">
+        <label>操作</label>
+        <div id="wechat-bind-hint" style="line-height:1.8;color:var(--text-secondary);">点击生成后，在微信发送绑定命令。</div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="document.getElementById('wechat-bind-modal').classList.remove('show')">关闭</button>
+        <button class="btn btn-primary" onclick="createWechatBindCode()">生成绑定码</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/config.js?v=4"></script>
+  <script src="/static/js/app.js?v=4"></script>
   <!-- Drawer: Add Person -->
   <div class="drawer-overlay" id="add-person-drawer" onclick="closeDrawer('add-person-drawer')">
     <div class="drawer" onclick="event.stopPropagation()">

@@ -1632,6 +1632,37 @@ function showChangePassword() {
   document.getElementById('pwd-modal').classList.add('show');
 }
 
+function showWechatBinding() {
+  const modal = document.getElementById('wechat-bind-modal');
+  if (!modal) return;
+  const codeEl = document.getElementById('wechat-bind-code');
+  const hintEl = document.getElementById('wechat-bind-hint');
+  if (codeEl) codeEl.textContent = '------';
+  if (hintEl) hintEl.textContent = '点击生成后，在微信发送绑定命令。';
+  modal.classList.add('show');
+}
+
+async function createWechatBindCode() {
+  const codeEl = document.getElementById('wechat-bind-code');
+  const hintEl = document.getElementById('wechat-bind-hint');
+  if (hintEl) hintEl.textContent = '正在生成绑定码...';
+
+  const res = await api(API + '/api/wechat/bind-code', { method: 'POST' });
+  if (!res) return;
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    showToast(data.detail || '生成绑定码失败', 'error');
+    if (hintEl) hintEl.textContent = data.detail || '生成绑定码失败，请稍后重试。';
+    return;
+  }
+
+  if (codeEl) codeEl.textContent = data.code || '------';
+  if (hintEl) {
+    hintEl.innerHTML = '请在微信发送：<strong>绑定 ' + data.code + '</strong><br>有效期至：' + data.expires_at;
+  }
+}
+
 /* ── Init ── */
 document.addEventListener('DOMContentLoaded', () => {
   if (token) {
