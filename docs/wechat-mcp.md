@@ -87,14 +87,16 @@ Authorization: Bearer <登录 token>
 
 ## 龙虾 MCP 调用
 
+gift-money 通过官方 MCP Python SDK 暴露为标准 MCP server（Streamable HTTP transport），挂载在 `/mcp`。工具列表、输入 schema、错误码与生命周期均由协议原生提供。
+
 Endpoint：
 
 ```text
-POST https://你的域名/mcp
+https://你的域名/mcp
 Header: X-MCP-Token: <GIFT_MONEY_MCP_API_TOKEN>
 ```
 
-发现工具：
+发现工具（`tools/list`）：
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}

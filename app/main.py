@@ -1,13 +1,15 @@
 """礼金管理系统 - FastAPI 入口"""
 import logging
 import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import settings
 from app.database import init_db
-from app.routes import auth, transactions, categories, stats, people, import_export, wechat, mcp
+from app.routes import auth, transactions, categories, stats, people, import_export, wechat
+from app.routes.mcp import get_mcp_app
 
 # 配置日志系统
 logging.basicConfig(
@@ -20,7 +22,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="礼金管理系统", version="2.2.1")
+mcp_app = get_mcp_app()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # Drive the MCP Streamable HTTP session manager's lifespan explicitly.
+    # A sub-application added via app.mount("/mcp", ...) does not get its own
+    # lifespan run by uvicorn, so we own it here to initialize its task group.
+    async with mcp_app.router.lifespan_context(mcp_app):
+        init_db()
+        logger.info("应用启动完成")
+        yield
+
+
+app = FastAPI(title="礼金管理系统", version="2.2.1", lifespan=lifespan)
 
 
 class NoCacheMiddleware(BaseHTTPMiddleware):
@@ -57,13 +73,9 @@ app.include_router(stats.router)
 app.include_router(people.router)
 app.include_router(import_export.router)
 app.include_router(wechat.router)
-app.include_router(mcp.router)
 
-
-@app.on_event("startup")
-def on_startup():
-    init_db()
-    logger.info("应用启动完成")
+# Mount the standard MCP server (Streamable HTTP transport) at /mcp.
+app.mount("/mcp", mcp_app)
 
 
 @app.get("/health")
