@@ -112,7 +112,9 @@ async def _check_token(request: Request, call_next: RequestResponseEndpoint) -> 
 # The Streamable HTTP transport is mounted at /mcp on the FastAPI application.
 # streamable_http_path="/" keeps the endpoint at the mount root so the full
 # path is /mcp (FastAPI strips the mount prefix before dispatching to the sub-app).
-mcp_app = mcp.streamable_http_app(streamable_http_path="/")
+# host="0.0.0.0" disables the SDK's Host-header allowlist so proxied requests
+# (Nginx -> uvicorn) with a public Host header are not rejected with 421.
+mcp_app = mcp.streamable_http_app(streamable_http_path="/", host="0.0.0.0")
 mcp_app.add_middleware(BaseHTTPMiddleware, dispatch=_check_token)
 
 
