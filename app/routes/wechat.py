@@ -265,9 +265,24 @@ def oauth_callback(code: str = Query(""), state: str = Query("")):
         conn.close()
 
     return HTMLResponse(
-        "<html><body style='font-family:sans-serif;text-align:center;padding-top:80px'>"
-        "<h3>绑定成功</h3><p>现在可以在微信里向公众号发消息查询了，例如：张三送了我多少礼金？</p>"
-        "<p><a href='/'>返回礼金系统</a></p></body></html>"
+        "<!DOCTYPE html><html lang='zh'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>绑定成功</title></head>"
+        "<body style='margin:0;font-family:-apple-system,Segoe UI,sans-serif;background:#f5f6f8;color:#222;'>"
+        "<div style='max-width:420px;margin:0 auto;padding:40px 24px;text-align:center;'>"
+        "<div style='width:56px;height:56px;margin:0 auto 16px;border-radius:50%;background:#07c160;"
+        "color:#fff;font-size:30px;line-height:56px;'>✓</div>"
+        "<h2 style='margin:0 0 8px;font-size:22px;'>绑定成功</h2>"
+        "<p style='margin:0 0 24px;color:#666;font-size:14px;line-height:1.7;'>"
+        "账号已绑定微信。现在去测试号里发消息就能查询礼金了。</p>"
+        "<div style='background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 4px rgba(0,0,0,.06);'>"
+        "<div style='font-size:14px;font-weight:600;margin-bottom:12px;'>① 长按识别二维码，关注测试号</div>"
+        f"<img src='https://open.weixin.qq.com/qr/code?username={settings.wechat_test_account}' "
+        "alt='测试号二维码' style='width:200px;height:200px;border-radius:8px;object-fit:contain;'>"
+        "<div style='font-size:13px;color:#666;margin-top:12px;line-height:1.7;'>"
+        "② 关注后，到微信「订阅号消息」进入测试号对话<br>"
+        "③ 发送：<strong>张三送了我多少礼金？</strong></div>"
+        "</div></div></body></html>"
     )
 
 

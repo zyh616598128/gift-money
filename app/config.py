@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     wechat_app_id: str = os.environ.get("GIFT_MONEY_WECHAT_APP_ID", os.environ.get("WECHAT_APP_ID", ""))
     wechat_app_secret: str = os.environ.get("GIFT_MONEY_WECHAT_APP_SECRET", os.environ.get("WECHAT_APP_SECRET", ""))
     wechat_oauth_redirect_uri: str = os.environ.get("GIFT_MONEY_WECHAT_OAUTH_REDIRECT_URI", "")
+    # 测试号 gh 账号 → 关注二维码 (open.weixin.qq.com/qr/code?username=gh_xxx)
+    wechat_test_account: str = os.environ.get("GIFT_MONEY_WECHAT_TEST_ACCOUNT", os.environ.get("WECHAT_TEST_ACCOUNT", "gh_434b155e059c"))
 
     # MCP integration. Set this in production and pass it as X-MCP-Token.
     mcp_api_token: str = os.environ.get("GIFT_MONEY_MCP_API_TOKEN", "")
