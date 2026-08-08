@@ -1644,16 +1644,25 @@ function showWechatBinding() {
 
 async function startWechatOauth() {
   const hintEl = document.getElementById('wechat-bind-hint');
-  if (hintEl) hintEl.textContent = '正在跳转微信授权...';
-  const res = await api(API + '/api/wechat/oauth/start', { method: 'GET' });
+  const qrBox = document.getElementById('wechat-bind-qr');
+  const qrImg = document.getElementById('wechat-bind-qr-img');
+  if (hintEl) hintEl.textContent = '正在生成二维码...';
+  if (qrBox) qrBox.style.display = 'none';
+
+  const res = await api(API + '/api/wechat/oauth/qr', { method: 'GET' });
   if (!res) return;
-  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
     showToast(data.detail || '微信授权未配置', 'error');
     if (hintEl) hintEl.textContent = data.detail || '微信授权未配置，请联系管理员。';
     return;
   }
-  if (data.url) window.location.href = data.url;
+
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  if (qrImg) qrImg.src = objectUrl;
+  if (qrBox) qrBox.style.display = 'block';
+  if (hintEl) hintEl.textContent = '请使用手机微信扫描下方二维码完成绑定。';
 }
 
 async function createWechatBindCode() {

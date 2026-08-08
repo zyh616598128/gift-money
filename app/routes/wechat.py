@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import re
 import secrets
 import time
@@ -10,6 +11,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 
 import jwt
+import qrcode
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 
@@ -210,6 +212,20 @@ def start_oauth(request: Request):
     user = get_current_user(request)
     state = _issue_bind_state(user["user_id"])
     return {"url": _oauth_authorize_url(state)}
+
+
+@router.get("/oauth/qr")
+def oauth_qr(request: Request):
+    """网页登录用户：返回绑定授权链接的二维码图片（PNG），供手机微信扫码。"""
+    if not settings.wechat_app_id or not settings.wechat_app_secret or not settings.wechat_oauth_redirect_uri:
+        raise HTTPException(status_code=503, detail="微信授权未配置，请联系管理员。")
+    user = get_current_user(request)
+    state = _issue_bind_state(user["user_id"])
+    url = _oauth_authorize_url(state)
+    img = qrcode.make(url)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png")
 
 
 @router.get("/oauth/callback")
