@@ -570,17 +570,24 @@
     <div class="modal">
       <div class="modal-title">微信绑定</div>
       <div class="form-group">
-        <label>绑定码</label>
-        <div id="wechat-bind-code" style="font-size:32px;font-weight:700;letter-spacing:4px;text-align:center;padding:16px;border:1px solid var(--border);border-radius:8px;">------</div>
-      </div>
-      <div class="form-group">
-        <label>操作</label>
-        <div id="wechat-bind-hint" style="line-height:1.8;color:var(--text-secondary);">点击生成后，在微信发送绑定命令。</div>
+        <label>一键绑定（推荐）</label>
+        <div id="wechat-bind-hint" style="line-height:1.8;color:var(--text-secondary);">点击后跳转微信授权，全程无需输入，绑定后即可直接在微信里查询礼金。</div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" onclick="document.getElementById('wechat-bind-modal').classList.remove('show')">关闭</button>
-        <button class="btn btn-primary" onclick="createWechatBindCode()">生成绑定码</button>
+        <button class="btn btn-primary" onclick="startWechatOauth()">绑定微信</button>
       </div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:12px 0;">
+      <details style="color:var(--text-secondary);font-size:13px;">
+        <summary>备用：使用绑定码</summary>
+        <div class="form-group" style="margin-top:8px;">
+          <div id="wechat-bind-code" style="font-size:32px;font-weight:700;letter-spacing:4px;text-align:center;padding:16px;border:1px solid var(--border);border-radius:8px;">------</div>
+        </div>
+        <div id="wechat-bind-hint2" style="line-height:1.8;color:var(--text-secondary);">生成后，在微信发送：绑定 绑定码。</div>
+        <div class="modal-actions">
+          <button class="btn btn-ghost" onclick="createWechatBindCode()">生成绑定码</button>
+        </div>
+      </details>
     </div>
   </div>
 

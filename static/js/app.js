@@ -1636,15 +1636,29 @@ function showWechatBinding() {
   const modal = document.getElementById('wechat-bind-modal');
   if (!modal) return;
   const codeEl = document.getElementById('wechat-bind-code');
-  const hintEl = document.getElementById('wechat-bind-hint');
+  const hintEl = document.getElementById('wechat-bind-hint2');
   if (codeEl) codeEl.textContent = '------';
-  if (hintEl) hintEl.textContent = '点击生成后，在微信发送绑定命令。';
+  if (hintEl) hintEl.textContent = '生成后，在微信发送：绑定 绑定码。';
   modal.classList.add('show');
+}
+
+async function startWechatOauth() {
+  const hintEl = document.getElementById('wechat-bind-hint');
+  if (hintEl) hintEl.textContent = '正在跳转微信授权...';
+  const res = await api(API + '/api/wechat/oauth/start', { method: 'GET' });
+  if (!res) return;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    showToast(data.detail || '微信授权未配置', 'error');
+    if (hintEl) hintEl.textContent = data.detail || '微信授权未配置，请联系管理员。';
+    return;
+  }
+  if (data.url) window.location.href = data.url;
 }
 
 async function createWechatBindCode() {
   const codeEl = document.getElementById('wechat-bind-code');
-  const hintEl = document.getElementById('wechat-bind-hint');
+  const hintEl = document.getElementById('wechat-bind-hint2');
   if (hintEl) hintEl.textContent = '正在生成绑定码...';
 
   const res = await api(API + '/api/wechat/bind-code', { method: 'POST' });

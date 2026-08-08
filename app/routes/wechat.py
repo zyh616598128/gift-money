@@ -5,11 +5,13 @@ import hashlib
 import re
 import secrets
 import time
+import urllib.parse
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 
+import jwt
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import PlainTextResponse, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 
 from app.config import settings
 from app.database import get_connection
@@ -142,6 +144,115 @@ def _save_message(
         raise
     finally:
         conn.close()
+
+
+# ── 一键授权绑定 (snsapi_base, 免费拿 openid) ──
+# 用户只需在网页点一次"绑定微信"，授权全程静默，无需输入、无需短信。
+
+
+def _issue_bind_state(user_id: int) -> str:
+    """签发一个短时 state 令牌，把一次 OAuth 回调绑定到网页登录用户。"""
+    expire = datetime.utcnow() + timedelta(minutes=5)
+    return jwt.encode(
+        {"purpose": "wechat_bind", "user_id": user_id, "exp": expire},
+        settings.jwt_secret,
+        algorithm=settings.jwt_algorithm,
+    )
+
+
+def _resolve_bind_state(state: str) -> int | None:
+    try:
+        payload = jwt.decode(state, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+        if payload.get("purpose") != "wechat_bind":
+            return None
+        return int(payload["user_id"])
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, KeyError, TypeError, ValueError):
+        return None
+
+
+def _oauth_authorize_url(state: str) -> str:
+    params = urllib.parse.urlencode({
+        "appid": settings.wechat_app_id,
+        "redirect_uri": settings.wechat_oauth_redirect_uri,
+        "response_type": "code",
+        "scope": "snsapi_base",
+        "state": state,
+    })
+    return f"https://open.weixin.qq.com/connect/oauth2/authorize?{params}#wechat_redirect"
+
+
+def _exchange_openid(code: str) -> str:
+    """用授权 code 换 openid（测试号免费 snsapi_base 授权）。"""
+    import urllib.request
+
+    params = urllib.parse.urlencode({
+        "appid": settings.wechat_app_id,
+        "secret": settings.wechat_app_secret,
+        "code": code,
+        "grant_type": "authorization_code",
+    })
+    url = f"https://api.weixin.qq.com/sns/oauth2/access_token?{params}"
+    with urllib.request.urlopen(url, timeout=10) as resp:
+        data = resp.read().decode("utf-8")
+    import json
+
+    payload = json.loads(data)
+    if "openid" not in payload:
+        raise HTTPException(status_code=400, detail=f"微信授权失败: {payload.get('errmsg', data)}")
+    return payload["openid"]
+
+
+@router.get("/oauth/start")
+def start_oauth(request: Request):
+    """网页登录用户：返回微信一键绑定授权链接（静默 snsapi_base）。"""
+    if not settings.wechat_app_id or not settings.wechat_app_secret or not settings.wechat_oauth_redirect_uri:
+        raise HTTPException(status_code=503, detail="微信授权未配置，请联系管理员。")
+    user = get_current_user(request)
+    state = _issue_bind_state(user["user_id"])
+    return {"url": _oauth_authorize_url(state)}
+
+
+@router.get("/oauth/callback")
+def oauth_callback(code: str = Query(""), state: str = Query("")):
+    """微信授权回跳：换取 openid 并绑定到发起授权的网页用户。"""
+    user_id = _resolve_bind_state(state)
+    if user_id is None:
+        return HTMLResponse(
+            "<html><body style='font-family:sans-serif;text-align:center;padding-top:80px'>"
+            "<h3>绑定链接无效或已过期</h3><p>请回到网页重新点击「绑定微信」。</p></body></html>",
+            status_code=400,
+        )
+    if not code:
+        return HTMLResponse(
+            "<html><body style='font-family:sans-serif;text-align:center;padding-top:80px'>"
+            "<h3>授权已取消</h3><p>未收到微信授权，可回到网页重试。</p></body></html>",
+            status_code=400,
+        )
+
+    openid = _exchange_openid(code)
+
+    conn = get_connection()
+    try:
+        conn.execute(
+            """
+            INSERT INTO wechat_accounts (user_id, channel, external_id)
+            VALUES (?, 'wechat', ?)
+            ON CONFLICT(channel, external_id) DO UPDATE SET user_id = excluded.user_id
+            """,
+            (user_id, openid),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    return HTMLResponse(
+        "<html><body style='font-family:sans-serif;text-align:center;padding-top:80px'>"
+        "<h3>绑定成功</h3><p>现在可以在微信里向公众号发消息查询了，例如：张三送了我多少礼金？</p>"
+        "<p><a href='/'>返回礼金系统</a></p></body></html>"
+    )
 
 
 @router.get("/callback", response_class=PlainTextResponse)
