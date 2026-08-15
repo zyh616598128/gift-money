@@ -8,8 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import settings
 from app.database import init_db
-from app.routes import auth, transactions, categories, stats, people, import_export, wechat
-from app.routes.mcp import get_mcp_app
+from app.routes import auth, transactions, categories, stats, people, wechat
+from app.routes.mcp import get_mcp_app, json_rpc_endpoint
 
 # 配置日志系统
 logging.basicConfig(
@@ -71,11 +71,14 @@ app.include_router(transactions.router)
 app.include_router(categories.router)
 app.include_router(stats.router)
 app.include_router(people.router)
-app.include_router(import_export.router)
 app.include_router(wechat.router)
 
 # Mount the standard MCP server (Streamable HTTP transport) at /mcp.
 app.mount("/mcp", mcp_app)
+
+# Sessionless legacy MCP-over-HTTP binding at /mcp-jsonrpc (consumed by the
+# interop-fabric `json-rpc` transport without modifying the fabric base).
+app.add_api_route("/mcp-jsonrpc", json_rpc_endpoint, methods=["POST"])
 
 
 @app.get("/health")

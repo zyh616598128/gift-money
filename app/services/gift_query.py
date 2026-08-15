@@ -147,7 +147,7 @@ def infer_query_name(user_id: int, text: str) -> Optional[str]:
 
     cleaned = _clean_text(text)
     patterns = [
-        r"^(?:查|查询|看看|看下)?(?P<name>[\u4e00-\u9fa5A-Za-z0-9_·]{1,20})(?:送了我|给了我|随了我|礼金|红包|多少|多少钱|明细|记录|哪几次)",
+        r"^(?:查|查询|看看|看下)?(?P<name>[\u4e00-\u9fa5A-Za-z0-9_·]{1,20}?)(?:送了我|给了我|随了我|礼金|红包|多少|多少钱|明细|记录|哪几次)",
         r"^(?:查|查询|看看|看下)(?P<name>[\u4e00-\u9fa5A-Za-z0-9_·]{1,20})",
         r"(?P<name>[\u4e00-\u9fa5A-Za-z0-9_·]{1,20})(?:总共|合计)",
     ]
@@ -232,3 +232,273 @@ def answer_gift_question(user_id: int, text: str) -> Dict[str, Any]:
         "data": summary,
         "reply": "\n".join(lines),
     }
+
+
+# --------------------------------------------------------------------------- #
+# Write operations (gift ledger + people + categories). Identity resolution is
+# the CALLER's job (channel/external_id -> user_id); these helpers operate on
+# an already-resolved user_id so the MCP tools stay single-responsibility.
+# --------------------------------------------------------------------------- #
+def resolve_person(conn, user_id: int, name: str, address: str = "") -> Optional[int]:
+    """Find a person by (name, address); None when not found.
+
+    Prefer an exact (name, address) match; otherwise fall back to a name-only
+    match, preferring the row with an empty address so a plain name reliably
+    resolves to the canonical person instead of racing a UNIQUE(user, name, address).
+    """
+    if not name:
+        return None
+    if address:
+        person = conn.execute(
+            "SELECT id FROM people WHERE user_id = ? AND name = ? AND address = ?",
+            (user_id, name, address),
+        ).fetchone()
+        if person:
+            return person["id"]
+    person = conn.execute(
+        "SELECT id FROM people WHERE user_id = ? AND name = ? "
+        "ORDER BY CASE WHEN address = '' THEN 0 ELSE 1 END LIMIT 1",
+        (user_id, name),
+    ).fetchone()
+    if person:
+        return person["id"]
+    return None
+
+
+def create_transaction(
+    user_id: int,
+    name: str,
+    amount: float,
+    direction: str,
+    category: str,
+    date: str,
+    note: str = "",
+) -> Dict[str, Any]:
+    """Record one gift transaction, auto-linking/creating the person. Returns {id, person_id}."""
+    if direction not in ("income", "expense"):
+        return {"ok": False, "error": f"direction must be 'income' or 'expense', got {direction!r}"}
+    if not name or amount <= 0:
+        return {"ok": False, "error": "name and a positive amount are required"}
+
+    conn = get_connection()
+    try:
+        person_id = resolve_person(conn, user_id, name)
+        if person_id is None:
+            cur = conn.execute(
+                "INSERT INTO people (user_id, name, phone, address, note) VALUES (?, ?, '', '', ?)",
+                (user_id, name, note),
+            )
+            person_id = cur.lastrowid
+        cur = conn.execute(
+            """INSERT INTO transactions (user_id, name, amount, category, date, direction, note, person_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, name, amount, category, date, direction, note, person_id),
+        )
+        conn.commit()
+        return {"ok": True, "id": cur.lastrowid, "person_id": person_id, "person_name": name}
+    except Exception as exc:  # noqa: BLE001 - surface as structured error
+        conn.rollback()
+        return {"ok": False, "error": str(exc)}
+    finally:
+        conn.close()
+
+
+def update_transaction(
+    user_id: int, tx_id: int, fields: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Update selected fields of one transaction owned by user_id."""
+    allowed = {"name", "amount", "category", "date", "direction", "note"}
+    updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    if not updates:
+        return {"ok": False, "error": "no updatable field provided"}
+
+    conn = get_connection()
+    try:
+        existing = conn.execute(
+            "SELECT id FROM transactions WHERE id = ? AND user_id = ?", (tx_id, user_id)
+        ).fetchone()
+        if not existing:
+            return {"ok": False, "error": "transaction not found or not owned by user"}
+
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(
+            f"UPDATE transactions SET {set_clause} WHERE id = ? AND user_id = ?",
+            list(updates.values()) + [tx_id, user_id],
+        )
+        # Re-link person if the name changed.
+        if "name" in updates:
+            person_id = resolve_person(conn, user_id, str(updates["name"]))
+            conn.execute(
+                "UPDATE transactions SET person_id = ? WHERE id = ?",
+                (person_id, tx_id),
+            )
+        conn.commit()
+        return {"ok": True, "id": tx_id}
+    except Exception as exc:  # noqa: BLE001
+        conn.rollback()
+        return {"ok": False, "error": str(exc)}
+    finally:
+        conn.close()
+
+
+def delete_transaction(user_id: int, tx_id: int) -> Dict[str, Any]:
+    """Delete one transaction owned by user_id."""
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "DELETE FROM transactions WHERE id = ? AND user_id = ?", (tx_id, user_id)
+        )
+        conn.commit()
+        if cur.rowcount == 0:
+            return {"ok": False, "error": "transaction not found or not owned by user"}
+        return {"ok": True, "id": tx_id}
+    finally:
+        conn.close()
+
+
+def create_person(
+    user_id: int, name: str, phone: str = "", address: str = "", note: str = ""
+) -> Dict[str, Any]:
+    """Create a person (name+address unique per user)."""
+    if not name:
+        return {"ok": False, "error": "name is required"}
+    conn = get_connection()
+    try:
+        existing = conn.execute(
+            "SELECT id FROM people WHERE user_id = ? AND name = ? AND address = ?",
+            (user_id, name, address or ""),
+        ).fetchone()
+        if existing:
+            return {"ok": False, "exists": True, "id": existing["id"], "error": f"人员 {name} 已存在"}
+        cur = conn.execute(
+            "INSERT INTO people (user_id, name, phone, address, note) VALUES (?, ?, ?, ?, ?)",
+            (user_id, name, phone, address, note),
+        )
+        conn.commit()
+        return {"ok": True, "id": cur.lastrowid}
+    except Exception as exc:  # noqa: BLE001
+        conn.rollback()
+        return {"ok": False, "error": str(exc)}
+    finally:
+        conn.close()
+
+
+def update_person(user_id: int, person_id: int, fields: Dict[str, Any]) -> Dict[str, Any]:
+    """Update selected fields of one person owned by user_id."""
+    allowed = {"name", "phone", "address", "note"}
+    updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    if not updates:
+        return {"ok": False, "error": "no updatable field provided"}
+
+    conn = get_connection()
+    try:
+        existing = conn.execute(
+            "SELECT id FROM people WHERE id = ? AND user_id = ?", (person_id, user_id)
+        ).fetchone()
+        if not existing:
+            return {"ok": False, "error": "person not found or not owned by user"}
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(
+            f"UPDATE people SET {set_clause} WHERE id = ? AND user_id = ?",
+            list(updates.values()) + [person_id, user_id],
+        )
+        conn.commit()
+        return {"ok": True, "id": person_id}
+    except Exception as exc:  # noqa: BLE001
+        conn.rollback()
+        return {"ok": False, "error": str(exc)}
+    finally:
+        conn.close()
+
+
+def ledger_summary(user_id: int) -> Dict[str, Any]:
+    """Global gift ledger summary: totals, monthly trend, category breakdown."""
+    conn = get_connection()
+    try:
+        total = conn.execute(
+            """SELECT COALESCE(SUM(CASE WHEN direction='income' THEN amount ELSE 0 END), 0) AS ti,
+                      COALESCE(SUM(CASE WHEN direction='expense' THEN amount ELSE 0 END), 0) AS te,
+                      COUNT(CASE WHEN direction='income' THEN 1 END) AS ic,
+                      COUNT(CASE WHEN direction='expense' THEN 1 END) AS ec
+               FROM transactions WHERE user_id = ?""",
+            (user_id,),
+        ).fetchone()
+        monthly = conn.execute(
+            """SELECT substr(date, 1, 7) AS month,
+                      COALESCE(SUM(CASE WHEN direction='income' THEN amount ELSE 0 END), 0) AS income,
+                      COALESCE(SUM(CASE WHEN direction='expense' THEN amount ELSE 0 END), 0) AS expense
+               FROM transactions WHERE user_id = ?
+               GROUP BY substr(date, 1, 7) ORDER BY month DESC LIMIT 12""",
+            (user_id,),
+        ).fetchall()
+        categories = conn.execute(
+            """SELECT category,
+                      COALESCE(SUM(CASE WHEN direction='income' THEN amount ELSE 0 END), 0) AS income,
+                      COALESCE(SUM(CASE WHEN direction='expense' THEN amount ELSE 0 END), 0) AS expense
+               FROM transactions WHERE user_id = ?
+               GROUP BY category ORDER BY category""",
+            (user_id,),
+        ).fetchall()
+        top = conn.execute(
+            """SELECT p.id, p.name, p.address,
+                      COALESCE(SUM(CASE WHEN t.direction='income' THEN t.amount ELSE 0 END), 0) AS total_income,
+                      COALESCE(SUM(CASE WHEN t.direction='expense' THEN t.amount ELSE 0 END), 0) AS total_expense,
+                      COALESCE(SUM(CASE WHEN t.direction='income' THEN t.amount ELSE -t.amount END), 0) AS balance,
+                      COUNT(t.id) AS cnt
+               FROM people p
+               LEFT JOIN transactions t ON t.person_id = p.id AND t.user_id = ?
+               WHERE p.user_id = ?
+               GROUP BY p.id, p.name, p.address
+               HAVING cnt > 0
+               ORDER BY balance DESC LIMIT 20""",
+            (user_id, user_id),
+        ).fetchall()
+        return {
+            "total_income": total["ti"],
+            "total_expense": total["te"],
+            "balance": total["ti"] - total["te"],
+            "income_count": total["ic"],
+            "expense_count": total["ec"],
+            "monthly": [_row_to_dict(row) for row in monthly],
+            "categories": [_row_to_dict(row) for row in categories],
+            "top_people": [_row_to_dict(row) for row in top],
+        }
+    finally:
+        conn.close()
+
+
+def list_categories(user_id: int) -> List[Dict[str, Any]]:
+    """List the user's transaction categories."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, name, color FROM categories WHERE user_id = ? ORDER BY name",
+            (user_id,),
+        ).fetchall()
+        return [_row_to_dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def create_category(user_id: int, name: str, color: str = "#6366f1") -> Dict[str, Any]:
+    """Create a category (name unique per user)."""
+    if not name:
+        return {"ok": False, "error": "name is required"}
+    conn = get_connection()
+    try:
+        existing = conn.execute(
+            "SELECT id FROM categories WHERE user_id = ? AND name = ?", (user_id, name)
+        ).fetchone()
+        if existing:
+            return {"ok": False, "exists": True, "id": existing["id"], "error": f"分类 {name} 已存在"}
+        cur = conn.execute(
+            "INSERT INTO categories (user_id, name, color) VALUES (?, ?, ?)",
+            (user_id, name, color),
+        )
+        conn.commit()
+        return {"ok": True, "id": cur.lastrowid}
+    except Exception as exc:  # noqa: BLE001
+        conn.rollback()
+        return {"ok": False, "error": str(exc)}
+    finally:
+        conn.close()
