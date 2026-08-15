@@ -1,4 +1,4 @@
-﻿# Python
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -61,15 +61,18 @@ node_modules/
 # Claude
 .claude/
 
-# Test/Temp files
-test_*.py
-*_test.py
-check_*.py
-verify_*.py
-import_*.py
-convert_*.py
-final_*.py
-inspect_*.py
-read_excel.py
-task.md
+# AI agent skill caches (generated tooling, not project deliverables)
+.agents/
+
+# Test/Temp files (repo-root scratch scripts only; formal tests live under tests/)
+/test_*.py
+/*_test.py
+/check_*.py
+/verify_*.py
+/import_*.py
+/convert_*.py
+/final_*.py
+/inspect_*.py
+/read_excel.py
+/task.md
 .mcp.json

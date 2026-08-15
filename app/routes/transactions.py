@@ -1,8 +1,9 @@
 """Transaction routes: CRUD and batch operations."""
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from app.database import get_connection
+from app.services.validators import is_iso_date
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
@@ -16,6 +17,22 @@ class TransactionCreate(BaseModel):
     note: str = ""
     person_id: Optional[int] = None
 
+    @field_validator("date")
+    @classmethod
+    def _strict_date(cls, v: str) -> str:
+        if not is_iso_date(v):
+            raise ValueError(
+                "日期必须为 YYYY-MM-DD 格式（例如 2026-08-16），收到: " + repr(v)
+            )
+        return v
+
+    @field_validator("direction")
+    @classmethod
+    def _strict_direction(cls, v: str) -> str:
+        if v not in ("income", "expense"):
+            raise ValueError("direction 必须为 income 或 expense")
+        return v
+
 
 class TransactionUpdate(BaseModel):
     name: Optional[str] = None
@@ -25,6 +42,22 @@ class TransactionUpdate(BaseModel):
     direction: Optional[str] = None
     note: Optional[str] = None
     person_id: Optional[int] = None
+
+    @field_validator("date")
+    @classmethod
+    def _strict_date(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not is_iso_date(v):
+            raise ValueError(
+                "日期必须为 YYYY-MM-DD 格式（例如 2026-08-16），收到: " + repr(v)
+            )
+        return v
+
+    @field_validator("direction")
+    @classmethod
+    def _strict_direction(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ("income", "expense"):
+            raise ValueError("direction 必须为 income 或 expense")
+        return v
 
 
 class BatchDeleteRequest(BaseModel):
@@ -108,12 +141,19 @@ def create_transactions_batch(tx_list: List[dict], request: Request):
     try:
         for i, tx in enumerate(tx_list):
             try:
-                person_id = _resolve_person(conn, user["user_id"], tx.get("name", ""), tx.get("note", ""))
+                # 逐行复用 TransactionCreate 校验（含 date/direction 严格校验），
+                # 防止批量入口绕过 Pydantic validator 写入脏数据。
+                try:
+                    model = TransactionCreate.model_validate(tx)
+                except Exception as ve:
+                    errors.append(f"第{i+1}行: {ve.errors()[0]['msg'] if hasattr(ve, 'errors') else str(ve)}")
+                    continue
+                person_id = _resolve_person(conn, user["user_id"], model.name, model.note)
                 conn.execute(
                     """INSERT INTO transactions (user_id, name, amount, category, date, direction, note, person_id)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (user["user_id"], tx.get("name", ""), tx.get("amount"), tx.get("category"),
-                     tx.get("date"), tx.get("direction"), tx.get("note", ""), person_id),
+                    (user["user_id"], model.name, model.amount, model.category,
+                     model.date, model.direction, model.note, person_id),
                 )
                 inserted += 1
             except Exception as e:
@@ -332,6 +372,12 @@ def update_transactions_batch(req: BatchUpdateRequest, request: Request):
 
     if not updates:
         raise HTTPException(status_code=400, detail="没有有效的更新字段")
+
+    # 严格校验更新的值，防止批量入口写入脏数据（与单条更新一致）
+    if "date" in updates and not is_iso_date(updates["date"]):
+        raise HTTPException(status_code=422, detail=f"日期必须为 YYYY-MM-DD 格式，收到: {updates['date']!r}")
+    if "direction" in updates and updates["direction"] not in ("income", "expense"):
+        raise HTTPException(status_code=422, detail="direction 必须为 income 或 expense")
 
     conn = get_connection()
     try:

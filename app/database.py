@@ -46,6 +46,8 @@ def init_db():
 
         # ── Transactions (system core) ──
         # 只保留 category 字段，移除 event_type
+        # date 必须是严格 YYYY-MM-DD（系统级最后防线：任何入口——MCP、REST、
+        # 批量、未来代码——都无法写入非标准日期，避免脏数据逐入口漏检）。
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS transactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -53,7 +55,7 @@ def init_db():
                 name TEXT NOT NULL,
                 amount REAL NOT NULL,
                 category TEXT NOT NULL DEFAULT '其他',
-                date TEXT NOT NULL,
+                date TEXT NOT NULL CHECK(date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
                 direction TEXT NOT NULL CHECK(direction IN ('income', 'expense')),
                 note TEXT DEFAULT '',
                 person_id INTEGER,
@@ -144,6 +146,98 @@ def init_db():
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )
         """)
+
+        # ── Migration: enforce a strict YYYY-MM-DD CHECK on transactions.date ──
+        # SQLite cannot ALTER TABLE to add a CHECK, so an existing table created
+        # before this constraint is rebuilt in place (copy → drop → recreate →
+        # copy back). The rebuild tolerates legacy dirty dates by normalizing
+        # them in SQL during the copy, so historical rows survive the migration.
+        # This is the system boundary that guarantees no future write path can
+        # persist a non-ISO date. The whole rebuild is wrapped in a savepoint so
+        # a failure rolls back atomically.
+        try:
+            txn_sql = cursor.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='transactions'"
+            ).fetchone()
+            needs_rebuild = bool(txn_sql) and "CHECK(date GLOB" not in (txn_sql["sql"] or "")
+            if needs_rebuild:
+                logger.info("transactions table lacks date CHECK — migrating (rebuild with strict date constraint)")
+                cursor.execute("SAVEPOINT migrate_tx_date_check")
+                cursor.execute("PRAGMA foreign_keys=OFF")
+                try:
+                    # Stage 1: copy rows into a CHECK-free staging table.
+                    cursor.execute("ALTER TABLE transactions RENAME TO transactions_old")
+                    cursor.execute("""
+                        CREATE TABLE transactions_staging (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER NOT NULL DEFAULT 1,
+                            name TEXT NOT NULL,
+                            amount REAL NOT NULL,
+                            category TEXT NOT NULL DEFAULT '其他',
+                            date TEXT NOT NULL,
+                            direction TEXT NOT NULL,
+                            note TEXT DEFAULT '',
+                            person_id INTEGER,
+                            created_at TEXT DEFAULT (datetime('now', 'localtime'))
+                        )
+                    """)
+                    # Legacy dirty dates (中文/无格式) are repaired inline:
+                    #   - '今天'/'今日'/'昨天'/'昨日'/'前天'/'大前天' → relative date
+                    #   - YYYYMMDD (8 digits) → YYYY-MM-DD
+                    #   - anything else → created_at's date, else 1970-01-01
+                    cursor.execute("""
+                        INSERT INTO transactions_staging
+                            (id, user_id, name, amount, category, date, direction, note, person_id, created_at)
+                        SELECT id, user_id, name, amount, category,
+                               CASE
+                                 WHEN date IN ('今天','今日') THEN date('now','localtime')
+                                 WHEN date IN ('昨天','昨日') THEN date('now','localtime','-1 day')
+                                 WHEN date IN ('前天') THEN date('now','localtime','-2 day')
+                                 WHEN date IN ('大前天') THEN date('now','localtime','-3 day')
+                                 WHEN length(date) = 8 AND date GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+                                   THEN substr(date,1,4) || '-' || substr(date,5,2) || '-' || substr(date,7,2)
+                                 WHEN date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]' THEN date
+                                 WHEN created_at IS NOT NULL AND length(created_at) >= 10 THEN substr(created_at,1,10)
+                                 ELSE '1970-01-01'
+                               END,
+                               direction, note, person_id, created_at
+                        FROM transactions_old
+                    """)
+                    cursor.execute("DROP TABLE transactions_old")
+
+                    # Stage 2: recreate the real table WITH the date CHECK and
+                    # move the (now clean) rows into it.
+                    cursor.execute("""
+                        CREATE TABLE transactions (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER NOT NULL DEFAULT 1,
+                            name TEXT NOT NULL,
+                            amount REAL NOT NULL,
+                            category TEXT NOT NULL DEFAULT '其他',
+                            date TEXT NOT NULL CHECK(date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+                            direction TEXT NOT NULL CHECK(direction IN ('income', 'expense')),
+                            note TEXT DEFAULT '',
+                            person_id INTEGER,
+                            created_at TEXT DEFAULT (datetime('now', 'localtime')),
+                            FOREIGN KEY (user_id) REFERENCES users(id),
+                            FOREIGN KEY (person_id) REFERENCES people(id)
+                        )
+                    """)
+                    cursor.execute("""
+                        INSERT INTO transactions
+                            (id, user_id, name, amount, category, date, direction, note, person_id, created_at)
+                        SELECT id, user_id, name, amount, category, date, direction, note, person_id, created_at
+                        FROM transactions_staging
+                    """)
+                    cursor.execute("DROP TABLE transactions_staging")
+                    cursor.execute("PRAGMA foreign_keys=ON")
+                    cursor.execute("RELEASE SAVEPOINT migrate_tx_date_check")
+                except Exception:
+                    cursor.execute("ROLLBACK TO SAVEPOINT migrate_tx_date_check")
+                    cursor.execute("PRAGMA foreign_keys=ON")
+                    raise
+        except Exception as e:
+            logger.warning(f"transactions date-check migration skipped: {e}")
 
         # ── Indexes ──
         indexes = [
