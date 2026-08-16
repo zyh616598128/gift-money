@@ -147,6 +147,22 @@ def init_db():
             )
         """)
 
+        # ── 渠道一键绑定码 (channel-agnostic) ──
+        # 用户未绑定时，聊天 bot 回复一个短码绑定链接（?c=CODE）。点开后在网页
+        # 登录/确认，code 即绑定到当前登录账号。短码 URL 不会被聊天客户端截断。
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS channel_bind_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT NOT NULL UNIQUE,
+                channel TEXT NOT NULL,
+                external_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                expires_at TEXT NOT NULL,
+                used_at TEXT,
+                created_at TEXT DEFAULT (datetime('now', 'localtime'))
+            )
+        """)
+
         # ── Migration: enforce a strict YYYY-MM-DD CHECK on transactions.date ──
         # SQLite cannot ALTER TABLE to add a CHECK, so an existing table created
         # before this constraint is rebuilt in place (copy → drop → recreate →
@@ -256,6 +272,7 @@ def init_db():
             "CREATE INDEX IF NOT EXISTS idx_transaction_drafts_user ON transaction_drafts(user_id, status, created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_wechat_bind_codes_user ON wechat_bind_codes(user_id, status, created_at DESC)",
             "CREATE INDEX IF NOT EXISTS idx_wechat_bind_codes_code ON wechat_bind_codes(code, status)",
+            "CREATE INDEX IF NOT EXISTS idx_channel_bind_codes_code ON channel_bind_codes(code, status)",
         ]
         for idx_sql in indexes:
             try:

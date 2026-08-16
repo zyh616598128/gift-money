@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # Password Policy
     min_password_length: int = 6
 
+    # Public base URL for outbound links (channel bind links etc.)
+    web_base_url: str = os.environ.get("GIFT_MONEY_WEB_BASE_URL", os.environ.get("WEB_BASE_URL", "https://www.wanpingshipin.cloud"))
+
     # WeChat integration
     wechat_token: str = os.environ.get("GIFT_MONEY_WECHAT_TOKEN", os.environ.get("WECHAT_TOKEN", ""))
     wechat_default_user_id: int = int(os.environ.get("GIFT_MONEY_WECHAT_DEFAULT_USER_ID", "1"))

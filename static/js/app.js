@@ -109,6 +109,7 @@ function showTabMobile(name) {
   if (name === 'summary') loadSummary();
   if (name === 'people') loadPersonList(1);
   if (name === 'list') loadCategories();
+  if (name === 'bindings') loadBindings();
 }
 
 function showMobileUserMenu() {
@@ -1621,6 +1622,7 @@ function showTab(name) {
   if (name === 'summary') loadSummary();
   if (name === 'people') loadPersonList(1);
   if (name === 'list') loadCategories();
+  if (name === 'bindings') loadBindings();
 }
 
 function toggleUserMenu() {
@@ -1640,6 +1642,56 @@ function showWechatBinding() {
   if (codeEl) codeEl.textContent = '------';
   if (hintEl) hintEl.textContent = '生成后，在微信发送：绑定 绑定码。';
   modal.classList.add('show');
+}
+
+/* ── 渠道绑定管理（查看/解绑）── */
+const CHANNEL_LABELS = { wechat: '微信', feishu: '飞书' };
+function shortExternalId(id) {
+  if (!id) return '';
+  return id.length > 20 ? id.slice(0, 10) + '…' + id.slice(-8) : id;
+}
+async function loadBindings() {
+  const box = document.getElementById('bindings-list');
+  if (!box) return;
+  box.innerHTML = '<div style="font-size:13px;color:var(--text-muted);">加载中…</div>';
+  const res = await api(API + '/api/wechat/bindings');
+  if (!res) return;
+  if (!res.ok) { box.innerHTML = '<div style="font-size:13px;color:#f53f3f;">加载失败</div>'; return; }
+  const data = await res.json().catch(() => ({}));
+  const rows = (data.data || []).filter(r => r.channel);
+  if (!rows.length) {
+    box.innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:18px 0;text-align:center;">' +
+      '还没有绑定任何渠道。<br>在微信/飞书里给机器人发一条查询消息，点回复里的绑定链接即可。</div>';
+    return;
+  }
+  box.innerHTML = rows.map((r, i) => {
+    const label = CHANNEL_LABELS[r.channel] || r.channel;
+    const badge = r.channel === 'wechat' ? '#07c160' : (r.channel === 'feishu' ? '#3370ff' : '#86909c');
+    return '<div style="display:flex;align-items:center;gap:12px;padding:12px 0;' +
+      (i ? 'border-top:1px solid var(--border);' : '') + '">' +
+      '<span style="width:36px;height:36px;border-radius:50%;background:' + badge + ';color:#fff;' +
+      'display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600;flex:none;">' + label[0] + '</span>' +
+      '<div style="flex:1;min-width:0;">' +
+      '<div style="font-size:15px;font-weight:600;">' + label + '</div>' +
+      '<div style="font-size:12px;color:var(--text-muted);word-break:break-all;">' + shortExternalId(r.external_id) + '</div>' +
+      '</div>' +
+      '<button class="btn btn-ghost" style="flex:none;font-size:13px;padding:6px 12px;" ' +
+      'onclick="unbindChannel(' + r.id + ', this)">解绑</button></div>';
+  }).join('');
+}
+async function unbindChannel(id, btn) {
+  if (!confirm('确定要解绑这个渠道吗？解绑后该渠道将无法查询礼金。')) return;
+  if (btn) { btn.disabled = true; btn.textContent = '解绑中…'; }
+  const res = await api(API + '/api/wechat/bindings/' + id, { method: 'DELETE' });
+  if (!res) { if (btn) btn.disabled = false; return; }
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) {
+    showToast('解绑成功');
+    loadBindings();
+  } else {
+    showToast(data.detail || '解绑失败', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '解绑'; }
+  }
 }
 
 async function startWechatOauth() {

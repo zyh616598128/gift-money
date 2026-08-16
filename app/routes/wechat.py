@@ -13,7 +13,8 @@ from datetime import datetime, timedelta
 import jwt
 import qrcode
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
+from pydantic import BaseModel
 
 from app.config import settings
 from app.database import get_connection
@@ -170,6 +171,85 @@ def _resolve_bind_state(state: str) -> int | None:
         return int(payload["user_id"])
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError, KeyError, TypeError, ValueError):
         return None
+
+
+# ── 渠道一键绑定链接 (channel-agnostic) ──
+# 未绑定用户收到的绑定链接用短码 ?c=CODE，避免长 JWT URL 在聊天客户端被截断，
+# 也便于延长有效期。点开链接 → 网页登录/确认 → (channel, external_id) 绑定到账号。
+
+_CHANNEL_BIND_TTL_MINUTES = 30
+
+
+def _generate_channel_bind_code() -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(8))
+
+
+def _issue_channel_bind_code(channel: str, external_id: str) -> str:
+    """生成并持久化一个短时绑定码，返回码本身（用于拼接 ?c=CODE 链接）。"""
+    expires = (datetime.now() + timedelta(minutes=_CHANNEL_BIND_TTL_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_connection()
+    try:
+        for _ in range(5):
+            code = _generate_channel_bind_code()
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO channel_bind_codes (code, channel, external_id, status, expires_at)
+                    VALUES (?, ?, ?, 'pending', ?)
+                    """,
+                    (code, channel, external_id, expires),
+                )
+                conn.commit()
+                return code
+            except Exception:
+                conn.rollback()
+                continue
+        raise RuntimeError("failed to allocate channel bind code")
+    finally:
+        conn.close()
+
+
+def _bind_channel_code(user_id: int, code: str) -> tuple[bool, str]:
+    """原子地消费绑定码并绑定到 user_id。返回 (ok, 消息)。"""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT id, channel, external_id FROM channel_bind_codes
+            WHERE code = ? AND status = 'pending' AND expires_at >= ?
+            """,
+            (code, now),
+        ).fetchone()
+        if not row:
+            return False, "绑定链接无效或已过期。请回到聊天里重新发送查询，点新的绑定链接。"
+        conn.execute(
+            """
+            INSERT INTO wechat_accounts (user_id, channel, external_id)
+            VALUES (?, ?, ?)
+            ON CONFLICT(channel, external_id) DO UPDATE SET user_id = excluded.user_id
+            """,
+            (user_id, row["channel"], row["external_id"]),
+        )
+        conn.execute(
+            "UPDATE channel_bind_codes SET status = 'used', used_at = ? WHERE id = ?",
+            (now, row["id"]),
+        )
+        conn.commit()
+        label = {"wechat": "微信", "feishu": "飞书"}.get(str(row["channel"]), row["channel"])
+        return True, f"绑定成功：已把「{label}」账号绑定到当前礼金账号，回 {label} 里继续问就行。"
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def build_channel_bind_link(channel: str, external_id: str) -> str:
+    """构造一键绑定链接：?c=短码，点开 → 网页登录/确认 → (channel, external_id) 绑定到账号。"""
+    code = _issue_channel_bind_code(channel, external_id)
+    return f"{settings.web_base_url.rstrip('/')}/bind?c={code}"
 
 
 def _oauth_authorize_url(state: str) -> str:
@@ -377,6 +457,153 @@ def delete_binding(binding_id: int, request: Request):
         return {"message": "解绑成功"}
     finally:
         conn.close()
+
+
+class ChannelBindConfirm(BaseModel):
+    code: str
+
+
+@router.post("/bind-confirm")
+def confirm_channel_bind(req: ChannelBindConfirm, request: Request):
+    """网页端确认：把绑定码携带的 (channel, external_id) 绑定到当前登录用户。
+
+    由一键绑定页 /bind 调用（Bearer 登录态）。绑定后即可在对应聊天渠道查询。
+    """
+    user = get_current_user(request)
+    ok, message = _bind_channel_code(user["user_id"], req.code.strip().upper())
+    if not ok:
+        return JSONResponse({"ok": False, "error": message}, status_code=400)
+    return {"ok": True, "reply": message}
+
+
+# ── 一键绑定页（channel 通用，无 /api 前缀）──
+page_router = APIRouter(tags=["bind"])
+
+
+@page_router.get("/bind")
+def bind_page(c: str = Query("")):
+    """一键绑定页：网页登录/确认后，把聊天渠道身份绑定到当前礼金账号。"""
+    if not c:
+        return HTMLResponse(_bind_html("链接无效", "缺少绑定参数，请回聊天里重新发送查询并点击新的绑定链接。"))
+    return HTMLResponse(_bind_html("账号绑定", ""))
+
+
+_BIND_PAGE = """<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title} · 礼金管家</title>
+<style>
+  body {{ margin:0;font-family:-apple-system,"Segoe UI","PingFang SC",sans-serif;background:#f2f4f7;color:#1f2329; }}
+  .wrap {{ max-width:420px;margin:0 auto;padding:48px 20px; }}
+  .card {{ background:#fff;border-radius:14px;padding:28px 22px;box-shadow:0 2px 10px rgba(0,0,0,.06);text-align:center; }}
+  h1 {{ font-size:20px;margin:0 0 6px; }}
+  .sub {{ color:#8a919f;font-size:13px;margin-bottom:22px; }}
+  .status {{ font-size:16px;line-height:1.8;color:#4e5969;margin:14px 0 4px; }}
+  .btn {{ display:block;width:100%;margin-top:18px;padding:12px 0;border:0;border-radius:10px;
+         background:#3370ff;color:#fff;font-size:16px;font-weight:600;cursor:pointer; }}
+  .btn:disabled {{ opacity:.5; }}
+  .link {{ color:#3370ff;text-decoration:none; }}
+  input {{ display:block;width:100%;box-sizing:border-box;margin:10px 0;padding:12px 14px;border:1px solid #e5e6eb;
+         border-radius:10px;font-size:15px;background:#f7f8fa; }}
+  .err {{ color:#f53f3f;font-size:13px;margin-top:10px;min-height:18px; }}
+</style></head><body><div class="wrap"><div class="card">
+<h1>礼金管家</h1>
+<div class="sub">一键绑定 · 渠道身份关联</div>
+<div id="box"><div class="status">正在处理…</div></div>
+</div></div>
+<script>
+const C = (new URLSearchParams(location.search).get('c') || '').toUpperCase();
+const box = document.getElementById('box');
+function view(html) {{ box.innerHTML = html; }}
+function headerHtml(channel) {{
+  const label = {{wechat:'微信',feishu:'飞书'}}[channel] || channel;
+  return '<div style="margin:8px 0 2px;font-size:14px;color:#4e5969;">将绑定渠道：<b>' + label + '</b></div>';
+}}
+function successHtml(reply) {{
+  view('<div style="width:56px;height:56px;margin:6px auto 14px;border-radius:50%;background:#07c160;color:#fff;' +
+      'font-size:30px;line-height:56px;">✓</div><div class="status" style="font-size:18px;font-weight:600;color:#07c160;">绑定成功</div>' +
+      '<div class="status" style="font-size:14px;">' + (reply||'') + '</div>' +
+      '<div class="status" style="font-size:13px;color:#8a919f;">现在回聊天里直接问礼金即可。</div>');
+}}
+function errorHtml(msg) {{
+  view('<div style="width:56px;height:56px;margin:6px auto 14px;border-radius:50%;background:#f53f3f;color:#fff;' +
+      'font-size:30px;line-height:56px;">!</div><div class="status">' + (msg||'操作失败，请重试') + '</div>' +
+      '<div class="status" style="font-size:13px;color:#8a919f;">可回聊天里重新发送查询，生成新的绑定链接。</div>');
+}}
+function expiredHtml(msg) {{
+  view('<div class="status" style="font-size:16px;font-weight:600;">' + (msg||'链接无效或已过期') + '</div>' +
+      '<div class="status" style="font-size:14px;color:#8a919f;">回聊天里重新发送查询，点新的绑定链接即可。</div>');
+}}
+function doConfirm(token) {{
+  return fetch('/api/wechat/bind-confirm', {{
+    method:'POST',
+    headers:{{'Content-Type':'application/json','Authorization':'Bearer '+token}},
+    body: JSON.stringify({{code:C}}),
+  }}).then(r => r.json().catch(()=>({{ok:false,error:'网络错误，请重试'}})))
+    .then(d => {{
+      if (d && d.ok) {{ successHtml(d.reply); }}
+      else {{ errorHtml((d&&d.error)||'绑定失败，请重试'); }}
+    }});
+}}
+function showConfirm(token) {{
+  let name = '当前登录账号';
+  try {{
+    const u = JSON.parse(localStorage.getItem('gift_user') || '{{}}');
+    name = u.display_name || u.username || name;
+  }} catch (e) {{}}
+  view('<div style="font-size:15px;line-height:1.7;color:#4e5969;">将把你在聊天里的身份绑定到礼金账号：' +
+      '<b style="font-size:17px;">' + name + '</b></div>' +
+      '<div style="font-size:12px;color:#8a919f;margin-top:6px;">绑定后，微信/飞书都能查询这个账号的礼金账本。</div>' +
+      '<button class="btn" id="b">确认绑定</button>');
+  document.getElementById('b').onclick = () => {{
+    const btn = document.getElementById('b');
+    btn.disabled = true; btn.textContent = '绑定中…';
+    doConfirm(token);
+  }};
+}}
+function showLogin() {{
+  view('<div class="status" style="font-weight:600;">请登录礼金账号以完成绑定</div>' +
+      '<input id="u" placeholder="用户名" autocomplete="username">' +
+      '<input id="p" type="password" placeholder="密码" autocomplete="current-password">' +
+      '<button class="btn" id="b">登录并绑定</button><div class="err" id="e"></div>' +
+      '<div style="font-size:12px;color:#8a919f;margin-top:6px;">没有账号？可在 <a class="link" href="/">礼金网页</a> 注册</div>');
+  document.getElementById('b').onclick = async () => {{
+    const u = document.getElementById('u').value.trim();
+    const p = document.getElementById('p').value;
+    const e = document.getElementById('e');
+    const btn = document.getElementById('b');
+    btn.disabled = true; btn.textContent = '登录中…';
+    try {{
+      const res = await fetch('/api/auth/login', {{
+        method:'POST', headers:{{'Content-Type':'application/json'}},
+        body: JSON.stringify({{username:u,password:p}}),
+      }});
+      const data = await res.json();
+      if (!res.ok || !data.token) {{
+        e.textContent = (data.detail||'登录失败');
+        btn.disabled=false; btn.textContent='登录并绑定'; return;
+      }}
+      localStorage.setItem('gift_token', data.token);
+      localStorage.setItem('gift_user', JSON.stringify(data.user));
+      btn.disabled = false; btn.textContent = '登录成功';
+      showConfirm(data.token);
+    }} catch (err) {{
+      e.textContent = '网络错误，请重试';
+      btn.disabled=false; btn.textContent='登录并绑定';
+    }}
+  }};
+}}
+(async () => {{
+  if (!C) {{ expiredHtml('缺少绑定参数'); return; }}
+  const token = localStorage.getItem('gift_token');
+  if (token) {{ showConfirm(token); }}
+  else {{ showLogin(); }}
+}})();
+</script></body></html>"""
+
+
+def _bind_html(title: str, note: str) -> str:
+    return _BIND_PAGE.format(title=title, note=note)
 
 
 @router.post("/callback")

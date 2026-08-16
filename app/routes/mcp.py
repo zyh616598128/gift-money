@@ -46,6 +46,24 @@ def _bound_user_id(channel: str, external_id: str) -> int | None:
     return settings.wechat_default_user_id
 
 
+def _binding_required_reply(channel: str, external_id: str) -> Dict:
+    """Build a binding-required result that includes a one-click bind link.
+
+    任何渠道（微信/飞书/…）未绑定用户都会拿到这条带链接的回复：点链接、
+    网页登录/确认一次，渠道身份即绑定到礼金账号，无需复制绑定码。
+    """
+    from app.routes.wechat import build_channel_bind_link
+    link = build_channel_bind_link(channel, external_id)
+    return {
+        "ok": False,
+        "intent": "binding_required",
+        "channel": channel,
+        "external_id": external_id,
+        "bind_link": link,
+        "reply": "你还没有绑定礼金账号。点击链接完成绑定（登录/确认一次即可，无需绑定码）：\n" + link,
+    }
+
+
 def _summary_reply(person_name: str, detail: Optional[Dict]) -> str:
     """Render a concise human-readable summary for a person's ledger."""
     if not detail:
@@ -124,12 +142,7 @@ def query_wechat_gift(
         }
     user_id = _bound_user_id(channel, external_id)
     if user_id is None:
-        return {
-            "intent": "binding_required",
-            "channel": channel,
-            "external_id": external_id,
-            "reply": "请先绑定礼金系统账号：登录网页后生成微信绑定码，然后在微信发送“绑定 绑定码”。",
-        }
+        return _binding_required_reply(channel, external_id)
 
     people = gift.search_people(user_id, name, limit=10)
     if not people:
@@ -169,12 +182,7 @@ def answer_wechat_message(text: str, external_id: str, channel: str = "wechat") 
 
     user_id = _bound_user_id(channel, external_id)
     if user_id is None:
-        return {
-            "intent": "binding_required",
-            "channel": channel,
-            "external_id": external_id,
-            "reply": "请先绑定礼金系统账号：登录网页后生成微信绑定码，然后在微信发送“绑定 绑定码”。",
-        }
+        return _binding_required_reply(channel, external_id)
     return gift.answer_gift_question(user_id, text)
 
 
@@ -188,14 +196,26 @@ def _require_bound(channel: str, external_id: str) -> tuple[int | None, Dict]:
         }
     user_id = _bound_user_id(channel, external_id)
     if user_id is None:
-        return None, {
+        return None, _binding_required_reply(channel, external_id)
+    return user_id, {}
+
+
+@mcp.tool()
+def get_bind_link(external_id: str, channel: str = "wechat") -> Dict:
+    """Generate a one-click bind link for an unbound channel user.
+
+    Call this when the user is not bound yet (e.g. a query returned
+    binding_required). The link lets the user click through, log in to the
+    gift-money web page once, and bind their channel identity (WeChat openid /
+    Feishu open_id) to their ledger account — no bind code to type.
+    """
+    if not external_id:
+        return {
             "ok": False,
             "intent": "binding_required",
-            "channel": channel,
-            "external_id": external_id,
-            "reply": "请先绑定礼金系统账号：登录网页后生成微信绑定码，然后在微信发送“绑定 绑定码”。",
+            "reply": "缺少渠道用户标识 external_id，无法生成绑定链接。",
         }
-    return user_id, {}
+    return _binding_required_reply(channel, external_id)
 
 
 @mcp.tool()

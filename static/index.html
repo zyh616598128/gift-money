@@ -69,6 +69,7 @@
         <button class="nav-tab" onclick="showTab('list')">📋 记录</button>
         <button class="nav-tab" onclick="showTab('people')">👥 人员</button>
         <button class="nav-tab" onclick="showTab('categories')">🏷️ 分类</button>
+        <button class="nav-tab" onclick="showTab('bindings')">🔗 绑定</button>
       </div>
 
       <!-- Tab: Summary -->
@@ -388,6 +389,20 @@
           <div id="category-list" class="category-list"></div>
         </div>
       </div>
+
+      <!-- Tab: Bindings -->
+      <div id="tab-bindings" class="tab-content" style="display:none;">
+        <div class="card" style="max-width:560px;">
+          <div class="card-title">🔗 渠道账号绑定</div>
+          <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px;line-height:1.7;">
+            在微信/飞书里向机器人查询礼金前，需要先把聊天身份绑定到本账号。
+            绑定后微信和飞书都能查看这个账号的礼金账本。需要先解绑原账号时，点「解绑」即可。
+          </div>
+          <div id="bindings-list">
+            <div style="font-size:13px;color:var(--text-muted);">加载中…</div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -516,6 +531,10 @@
     <button class="mobile-nav-item" onclick="showTabMobile('categories')">
       <span class="icon">🏷️</span>
       <span>分类</span>
+    </button>
+    <button class="mobile-nav-item" onclick="showTabMobile('bindings')">
+      <span class="icon">🔗</span>
+      <span>绑定</span>
     </button>
     <button class="mobile-nav-item" onclick="showMobileUserMenu()">
       <span class="icon">👤</span>
